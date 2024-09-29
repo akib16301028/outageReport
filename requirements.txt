@@ -4,3 +4,4 @@
 - Streamlit
 - Pandas
 - OpenPyXL
+-selenium
