@@ -7,33 +7,38 @@ def download_csv():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        # PHASE 1: Banglalink login and download
-        page.goto("https://ums.banglalink.net/index.php/site/login")
-        page.fill("#LoginForm_username", st.secrets["banglalink"]["username"])
-        page.fill("#LoginForm_password", st.secrets["banglalink"]["password"])
-        page.click('button[type="submit"]')
-        page.wait_for_timeout(5000)
+        try:
+            # PHASE 1: Banglalink login and download
+            page.goto("https://ums.banglalink.net/index.php/site/login")
+            page.fill("#LoginForm_username", st.secrets["banglalink"]["username"])
+            page.fill("#LoginForm_password", st.secrets["banglalink"]["password"])
+            page.click('button[type="submit"]')
+            page.wait_for_timeout(5000)
 
-        # Click on the CSV download button
-        page.click('button.btn_csv_export')
-        page.wait_for_timeout(10000)  # Wait for the download to complete
+            # Click on the CSV download button
+            page.click('button.btn_csv_export')
+            page.wait_for_timeout(10000)  # Wait for the download to complete
 
-        # PHASE 2: Eye Electronics login and download
-        page.goto("https://rms.eyeelectronics.net/login")
-        page.fill('[name="userName"]', st.secrets["eye"]["username"])
-        page.fill('[name="password"]', st.secrets["eye"]["password"])
-        page.click('button[type="submit"]')
-        page.wait_for_timeout(5000)
+            # PHASE 2: Eye Electronics login and download
+            page.goto("https://rms.eyeelectronics.net/login")
+            page.fill('[name="userName"]', st.secrets["eye"]["username"])
+            page.fill('[name="password"]', st.secrets["eye"]["password"])
+            page.click('button[type="submit"]')
+            page.wait_for_timeout(5000)
 
-        # Navigate and download
-        page.click('//div[contains(@class, "eye-menu-item") and contains(., "rms stations")]')
-        page.wait_for_timeout(5000)
-        page.click('//div[@class="card-item"]//h4[contains(text(), "All")]')
-        page.wait_for_timeout(5000)
-        page.click('//button[contains(@class, "p-button") and contains(., "Export")]')
-        page.wait_for_timeout(10000)  # Wait for the download to complete
+            # Navigate and download
+            page.click('//div[contains(@class, "eye-menu-item") and contains(., "rms stations")]')
+            page.wait_for_timeout(5000)
+            page.click('//div[@class="card-item"]//h4[contains(text(), "All")]')
+            page.wait_for_timeout(5000)
+            page.click('//button[contains(@class, "p-button") and contains(., "Export")]')
+            page.wait_for_timeout(10000)  # Wait for the download to complete
 
-        browser.close()
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+        finally:
+            browser.close()
+
     return "CSV files downloaded successfully!"
 
 # Streamlit UI
