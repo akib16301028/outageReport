@@ -1,7 +1,7 @@
-## Requirements
+# requirements.txt
 
-- Python 3.x
-- Streamlit
-- Pandas
-- OpenPyXL
-
+selenium
+webdriver-manager
+pandas
+openpyxl
+streamlit
