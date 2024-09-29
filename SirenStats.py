@@ -3,27 +3,50 @@ import streamlit as st
 from playwright.sync_api import sync_playwright
 import os
 import glob
-import time
-import shutil
+import subprocess
+import sys
 
-# Hard-coded credentials (Not recommended for production)
+# Function to install Playwright browsers
+def install_playwright_browsers():
+    try:
+        # Check if Playwright is installed
+        import playwright
+    except ImportError:
+        st.error("Playwright is not installed. Please ensure it's included in your requirements.txt.")
+        st.stop()
+    
+    # Path where Playwright browsers are installed
+    browser_path = os.path.expanduser("~/.cache/ms-playwright/chromium-1134/chrome-linux/chrome")
+    
+    if not os.path.exists(browser_path):
+        st.info("Playwright browsers not found. Installing...")
+        try:
+            subprocess.run(['playwright', 'install'], check=True)
+            st.success("Playwright browsers installed successfully.")
+        except subprocess.CalledProcessError as e:
+            st.error(f"Failed to install Playwright browsers: {e}")
+            st.stop()
+    else:
+        st.write("Playwright browsers are already installed.")
+
+# Call the installation function
+install_playwright_browsers()
+
+# ------------------------
+# Hard-Coded Credentials
+# ------------------------
+
+# **Banglalink Credentials**
 BANGALINK_USERNAME = "r.parves@blmanagedservices.com"
 BANGALINK_PASSWORD = "BLjessore@2024"
 
+# **Eye Electronics Credentials**
 EYEELECTRONICS_USERNAME = "noc@stl"
 EYEELECTRONICS_PASSWORD = "ScomNoC!2#"
 
-# Function to ensure Playwright browsers are installed
-def install_playwright_browsers():
-    with sync_playwright() as p:
-        p.install()
-
-# Call the installation function
-# Note: This may not work on Streamlit Cloud due to permission restrictions
-try:
-    install_playwright_browsers()
-except Exception as e:
-    st.warning("Playwright browsers installation skipped. They might already be installed.")
+# ------------------------
+# Helper Functions
+# ------------------------
 
 # Function to download CSV from Banglalink
 def download_banglalink_csv(download_dir, username, password):
@@ -32,6 +55,7 @@ def download_banglalink_csv(download_dir, username, password):
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
         
+        # Navigate to Banglalink login page
         page.goto("https://ums.banglalink.net/index.php/site/login")
         
         # Input credentials
@@ -44,7 +68,7 @@ def download_banglalink_csv(download_dir, username, password):
         # Wait for navigation to complete
         page.wait_for_load_state("networkidle")
         
-        # Click CSV download button
+        # Click CSV download button and handle download
         with page.expect_download() as download_info:
             page.click('button.btn_csv_export')
         download = download_info.value
@@ -60,6 +84,7 @@ def download_eyeelectronics_csv(download_dir, username, password):
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
         
+        # Navigate to Eye Electronics login page
         page.goto("https://rms.eyeelectronics.net/login")
         
         # Input credentials
@@ -80,7 +105,7 @@ def download_eyeelectronics_csv(download_dir, username, password):
         page.click('div.card-item >> text=All')
         page.wait_for_load_state("networkidle")
         
-        # Click on Export button
+        # Click on Export button and handle download
         with page.expect_download() as download_info:
             page.click('button.p-button:has-text("Export")')
         download = download_info.value
@@ -97,11 +122,15 @@ def get_latest_file(download_dir, extension="csv"):
     latest_file = max(list_of_files, key=os.path.getctime)
     return latest_file
 
+# ------------------------
+# Streamlit App Interface
+# ------------------------
+
 def main():
     st.title("Automated CSV Downloader")
     
     st.markdown("""
-    This application automates the downloading of CSV files from Banglalink and Eye Electronics platforms.
+    This application automates the downloading of CSV files from **Banglalink** and **Eye Electronics** platforms.
     """)
     
     # Define download directory
