@@ -1,143 +1,104 @@
-# download.py
+# app.py
 
-import os
-import time
+import streamlit as st
 import pandas as pd
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-
-# Configuration
-DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
-
-# Ensure download directory exists
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
-
-def setup_driver():
-    chrome_options = Options()
-    chrome_options.add_experimental_option("prefs", {
-        "download.default_directory": DOWNLOAD_DIR,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True
-    })
-    # Uncomment the next line to run Chrome in headless mode
-    # chrome_options.add_argument("--headless")
-    
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    return driver
-
-def download_banglalink_csv(driver):
-    print("Navigating to Banglalink login page...")
-    driver.get("https://ums.banglalink.net/index.php/site/login")
-    time.sleep(2)
-
-    # Log in
-    print("Logging into Banglalink...")
-    driver.find_element(By.ID, "LoginForm_username").send_keys("r.parves@blmanagedservices.com")
-    driver.find_element(By.ID, "LoginForm_password").send_keys("BLjessore@2024")
-    driver.find_element(By.XPATH, "//button[@type='submit' and contains(@class, 'btn-primary')]").click()
-    time.sleep(5)
-
-    # Navigate to Alarms page
-    print("Navigating to Alarms page...")
-    driver.get("https://ums.banglalink.net/index.php/alarms")
-    time.sleep(3)
-
-    # Click CSV download button
-    print("Clicking CSV download button...")
-    try:
-        download_button = driver.find_element(By.XPATH, "//button[contains(@class, 'btn_csv_export')]")
-        download_button.click()
-        print("CSV download initiated.")
-    except Exception as e:
-        print(f"Error finding or clicking CSV download button: {e}")
-        return
-
-    # Wait for download to complete
-    time.sleep(10)  # Adjust based on file size and internet speed
-
-    # Rename the downloaded CSV file
-    original_csv = os.path.join(DOWNLOAD_DIR, "alarms.csv")  # Adjust if the filename differs
-    new_csv = os.path.join(DOWNLOAD_DIR, "alarms_report.csv")
-    if os.path.exists(original_csv):
-        os.rename(original_csv, new_csv)
-        print(f"Renamed CSV to: {new_csv}")
-    else:
-        print("CSV file not found after download.")
-
-def download_eyeelectronics_xlsx(driver):
-    print("Navigating to Eye Electronics login page...")
-    driver.get("https://rms.eyeelectronics.net/login")
-    time.sleep(2)
-
-    # Log in
-    print("Logging into Eye Electronics...")
-    driver.find_element(By.NAME, "userName").send_keys("noc@stl")
-    driver.find_element(By.NAME, "password").send_keys("ScomNoC!2#")
-    driver.find_element(By.XPATH, "//button[@type='submit' and contains(@class, 'p-button')]").click()
-    time.sleep(5)
-
-    # Navigate to RMS Stations
-    print("Navigating to RMS Stations...")
-    try:
-        rms_stations = driver.find_element(By.XPATH, "//div[contains(@class, 'eye-menu-item') and contains(., 'rms stations')]")
-        rms_stations.click()
-        print("Clicked RMS Stations.")
-    except Exception as e:
-        print(f"Error navigating to RMS Stations: {e}")
-        return
-
-    time.sleep(5)
-
-    # Click on "All" stations
-    print("Selecting 'All' stations...")
-    try:
-        all_stations = driver.find_element(By.XPATH, "//div[@class='card-item']//h4[contains(text(), 'All')]")
-        all_stations.click()
-        print("Clicked 'All' stations.")
-    except Exception as e:
-        print(f"Error selecting 'All' stations: {e}")
-        return
-
-    time.sleep(5)
-
-    # Click Export button
-    print("Clicking Export button...")
-    try:
-        export_button = driver.find_element(By.XPATH, "//button[contains(@class, 'p-button') and contains(., 'Export')]")
-        export_button.click()
-        print("Export download initiated.")
-    except Exception as e:
-        print(f"Error finding or clicking Export button: {e}")
-        return
-
-    # Wait for download to complete
-    time.sleep(15)  # Adjust based on file size and internet speed
-
-    # Rename the downloaded XLSX file
-    # The filename format: RMS Station Status Report(September 30th 2024, 1_33_01 am).xlsx
-    # We'll search for the latest XLSX file containing 'RMS Station Status Report'
-    files = [f for f in os.listdir(DOWNLOAD_DIR) if f.endswith(".xlsx") and "RMS Station Status Report" in f]
-    if files:
-        latest_file = max([os.path.join(DOWNLOAD_DIR, f) for f in files], key=os.path.getmtime)
-        new_xlsx = os.path.join(DOWNLOAD_DIR, "rms_station_report.xlsx")
-        os.rename(latest_file, new_xlsx)
-        print(f"Renamed XLSX to: {new_xlsx}")
-    else:
-        print("XLSX file not found after download.")
+import sqlite3
+import io
 
 def main():
-    driver = setup_driver()
-    try:
-        download_banglalink_csv(driver)
-        download_eyeelectronics_xlsx(driver)
-    finally:
-        driver.quit()
-        print("Browser closed.")
+    st.title("SirenStats - Alarm Data Processing App")
+    
+    st.markdown("""
+    **SirenStats** is a Streamlit application that processes alarm data from Banglalink and Eye Electronics. 
+    Upload your CSV and XLSX files to generate a comprehensive report.
+    """)
+    
+    st.header("Upload Your Files")
+    
+    # Upload CSV file from Banglalink Alarms
+    csv_file = st.file_uploader("Upload CSV file from Banglalink Alarms", type=["csv"])
+    
+    # Upload XLSX file from Eye Electronics
+    xlsx_file = st.file_uploader("Upload XLSX file from Eye Electronics", type=["xlsx"])
+    
+    if st.button("Process Data"):
+        if csv_file and xlsx_file:
+            try:
+                # Read the CSV file
+                csv_data = pd.read_csv(csv_file)
+                st.success("CSV file uploaded and read successfully!")
+    
+                # Read the XLSX file
+                xlsx_data = pd.read_excel(xlsx_file)
+                st.success("XLSX file uploaded and read successfully!")
+    
+                # Validate required columns in CSV
+                required_csv_columns = ["Alarm Raised Date", "Alarm Raised Time", "Active for", "Site", "Alarm Slogan"]
+                if not all(col in csv_data.columns for col in required_csv_columns):
+                    st.error(f"CSV file is missing one or more required columns: {required_csv_columns}")
+                    st.stop()
+    
+                # Validate required columns in XLSX
+                required_xlsx_columns = ["Site Alias", "Zone", "Cluster"]
+                if not all(col in xlsx_data.columns for col in required_xlsx_columns):
+                    st.error(f"XLSX file is missing one or more required columns: {required_xlsx_columns}")
+                    st.stop()
+    
+                # Extract and clean relevant columns from CSV
+                bl_df = csv_data[required_csv_columns].copy()
+                bl_df['Site_Clean'] = bl_df['Site'].str.replace('_X', '', regex=False).str.split(' ').str[0].str.split('(').str[0].str.strip()
+    
+                # Extract and clean relevant columns from XLSX
+                ee_df = xlsx_data[required_xlsx_columns].copy()
+                ee_df['Site_Alias_Clean'] = ee_df['Site Alias'].str.split(' ').str[0].str.split('(').str[0].str.strip()
+    
+                # Merge dataframes on cleaned Site columns
+                merged_df = pd.merge(bl_df, ee_df, left_on='Site_Clean', right_on='Site_Alias_Clean', how='left')
+    
+                # Check for unmatched sites
+                unmatched = merged_df[merged_df['Zone'].isna()]
+                if not unmatched.empty:
+                    st.warning("Some sites did not match and have NaN for Zone and Cluster.")
+                    st.write(unmatched[['Site', 'Site_Clean']])
+    
+                # Select and rename columns as needed
+                final_df = merged_df[[
+                    "Alarm Raised Date",
+                    "Alarm Raised Time",
+                    "Active for",
+                    "Site",
+                    "Alarm Slogan",
+                    "Zone",
+                    "Cluster"
+                ]].copy()
+    
+                # Display the first few rows for verification
+                st.header("Preview of Merged Data")
+                st.dataframe(final_df.head())
+    
+                # Save to SQLite database (in-memory)
+                conn = sqlite3.connect(":memory:")
+                final_df.to_sql('alarms', conn, if_exists='replace', index=False)
+                conn.close()
+    
+                # Provide download link for the final report
+                st.header("Download Final Report")
+                towrite = io.BytesIO()
+                final_df.to_excel(towrite, index=False, engine='openpyxl')
+                towrite.seek(0)
+                st.download_button(
+                    label="📥 Download Final Report as Excel",
+                    data=towrite,
+                    file_name="final_report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+    
+                st.success("Data processed and report generated successfully!")
+    
+            except Exception as e:
+                st.error(f"An error occurred while processing the files: {e}")
+        else:
+            st.error("Please upload both CSV and XLSX files before processing.")
 
 if __name__ == "__main__":
     main()
