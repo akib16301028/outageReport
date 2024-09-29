@@ -1,105 +1,71 @@
+# app.py
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.options import Options
-import time
+from playwright.sync_api import sync_playwright
 import os
+import time
 import glob
 
-# Function to set up Selenium WebDriver
-def setup_driver(download_dir):
-    chrome_options = Options()
-    # Run in headless mode for server environments
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--proxy-server='direct://'")
-    chrome_options.add_argument("--proxy-bypass-list=*")
-    chrome_options.add_argument("--disable-infobars")
-    chrome_options.add_argument("--disable-browser-side-navigation")
-    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-    
-    prefs = {
-        "download.default_directory": download_dir,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True
-    }
-    chrome_options.add_experimental_option("prefs", prefs)
-
-    try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        return driver
-    except Exception as e:
-        st.error(f"Error initializing WebDriver: {e}")
-        st.stop()
-
 # Function to download CSV from Banglalink
-def download_banglalink_csv(driver, download_dir, username, password):
-    try:
-        driver.get("https://ums.banglalink.net/index.php/site/login")
-        time.sleep(2)
+def download_banglalink_csv(download_dir, username, password):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(accept_downloads=True)
+        page = context.new_page()
         
-        username_field = driver.find_element(By.ID, "LoginForm_username")
-        password_field = driver.find_element(By.ID, "LoginForm_password")
+        page.goto("https://ums.banglalink.net/index.php/site/login")
         
-        username_field.send_keys(username)
-        password_field.send_keys(password)
+        # Input credentials
+        page.fill("#LoginForm_username", username)
+        page.fill("#LoginForm_password", password)
         
-        login_button = driver.find_element(By.XPATH, '//button[@type="submit" and contains(@class, "btn-primary")]')
-        login_button.click()
+        # Click login
+        page.click('button[type="submit"].btn-primary')
         
-        time.sleep(5)
+        # Wait for navigation
+        page.wait_for_load_state("networkidle")
         
-        csv_download_button = driver.find_element(By.XPATH, '//button[contains(@class, "btn_csv_export")]')
-        csv_download_button.click()
+        # Click CSV download button
+        with page.expect_download() as download_info:
+            page.click('button.btn_csv_export')
+        download = download_info.value
+        download.save_as(os.path.join(download_dir, download.suggested_filename))
         
-        time.sleep(10)  # Adjust as needed
-    except Exception as e:
-        st.error(f"Error during Banglalink CSV download: {e}")
-        driver.quit()
-        st.stop()
+        browser.close()
 
 # Function to download CSV from Eye Electronics
-def download_eyeelectronics_csv(driver, download_dir, username, password):
-    try:
-        driver.get("https://rms.eyeelectronics.net/login")
-        time.sleep(2)
+def download_eyeelectronics_csv(download_dir, username, password):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(accept_downloads=True)
+        page = context.new_page()
         
-        username_field = driver.find_element(By.NAME, "userName")
-        password_field = driver.find_element(By.NAME, "password")
+        page.goto("https://rms.eyeelectronics.net/login")
         
-        username_field.send_keys(username)
-        password_field.send_keys(password)
+        # Input credentials
+        page.fill('input[name="userName"]', username)
+        page.fill('input[name="password"]', password)
         
-        login_button = driver.find_element(By.XPATH, '//button[@type="submit" and @label="Login"]')
-        login_button.click()
+        # Click login
+        page.click('button[type="submit"][label="Login"]')
         
-        time.sleep(5)
+        # Wait for navigation
+        page.wait_for_load_state("networkidle")
         
-        rms_stations_button = driver.find_element(By.XPATH, '//div[contains(@class, "eye-menu-item") and contains(., "rms stations")]')
-        rms_stations_button.click()
+        # Click on "RMS Stations"
+        page.click('div.eye-menu-item:has-text("rms stations")')
+        page.wait_for_load_state("networkidle")
         
-        time.sleep(5)
+        # Click on "All" stations
+        page.click('div.card-item >> text=All')
+        page.wait_for_load_state("networkidle")
         
-        all_stations_button = driver.find_element(By.XPATH, '//div[@class="card-item"]//h4[contains(text(), "All")]')
-        all_stations_button.click()
+        # Click on Export button
+        with page.expect_download() as download_info:
+            page.click('button.p-button:has-text("Export")')
+        download = download_info.value
+        download.save_as(os.path.join(download_dir, download.suggested_filename))
         
-        time.sleep(5)
-        
-        export_button = driver.find_element(By.XPATH, '//button[contains(@class, "p-button") and contains(., "Export")]')
-        export_button.click()
-        
-        time.sleep(10)  # Adjust as needed
-    except Exception as e:
-        st.error(f"Error during Eye Electronics CSV download: {e}")
-        driver.quit()
-        st.stop()
+        browser.close()
 
 # Function to get the latest downloaded file
 def get_latest_file(download_dir, extension="csv"):
@@ -129,38 +95,38 @@ def main():
     # Button to download Banglalink CSV
     if st.button("Download Banglalink CSV"):
         with st.spinner("Downloading Banglalink CSV..."):
-            driver = setup_driver(download_dir)
-            download_banglalink_csv(
-                driver,
-                download_dir,
-                st.secrets["banglalink"]["username"],
-                st.secrets["banglalink"]["password"]
-            )
-            driver.quit()
-            latest_file = get_latest_file(download_dir)
-            if latest_file:
-                st.session_state.banglalink_file = latest_file
-                st.success("Banglalink CSV downloaded successfully!")
-            else:
-                st.error("Failed to download Banglalink CSV.")
+            try:
+                download_banglalink_csv(
+                    download_dir,
+                    st.secrets["banglalink"]["username"],
+                    st.secrets["banglalink"]["password"]
+                )
+                latest_file = get_latest_file(download_dir)
+                if latest_file:
+                    st.session_state.banglalink_file = latest_file
+                    st.success("Banglalink CSV downloaded successfully!")
+                else:
+                    st.error("Failed to download Banglalink CSV.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
     # Button to download Eye Electronics CSV
     if st.button("Download Eye Electronics CSV"):
         with st.spinner("Downloading Eye Electronics CSV..."):
-            driver = setup_driver(download_dir)
-            download_eyeelectronics_csv(
-                driver,
-                download_dir,
-                st.secrets["eyeelectronics"]["username"],
-                st.secrets["eyeelectronics"]["password"]
-            )
-            driver.quit()
-            latest_file = get_latest_file(download_dir)
-            if latest_file:
-                st.session_state.eyeelectronics_file = latest_file
-                st.success("Eye Electronics CSV downloaded successfully!")
-            else:
-                st.error("Failed to download Eye Electronics CSV.")
+            try:
+                download_eyeelectronics_csv(
+                    download_dir,
+                    st.secrets["eyeelectronics"]["username"],
+                    st.secrets["eyeelectronics"]["password"]
+                )
+                latest_file = get_latest_file(download_dir)
+                if latest_file:
+                    st.session_state.eyeelectronics_file = latest_file
+                    st.success("Eye Electronics CSV downloaded successfully!")
+                else:
+                    st.error("Failed to download Eye Electronics CSV.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
     # Display download links
     st.header("Downloaded Files")
