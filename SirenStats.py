@@ -1,104 +1,107 @@
-# app.py
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
+import time
+import os
 
-import streamlit as st
-import pandas as pd
-import sqlite3
-import io
+# Set up Chrome options (this will enable file downloads)
+chrome_options = Options()
 
-def main():
-    st.title("SirenStats - Alarm Data Processing App")
-    
-    st.markdown("""
-    **SirenStats** is a Streamlit application that processes alarm data from Banglalink and Eye Electronics. 
-    Upload your CSV and XLSX files to generate a comprehensive report.
-    """)
-    
-    st.header("Upload Your Files")
-    
-    # Upload CSV file from Banglalink Alarms
-    csv_file = st.file_uploader("Upload CSV file from Banglalink Alarms", type=["csv"])
-    
-    # Upload XLSX file from Eye Electronics
-    xlsx_file = st.file_uploader("Upload XLSX file from Eye Electronics", type=["xlsx"])
-    
-    if st.button("Process Data"):
-        if csv_file and xlsx_file:
-            try:
-                # Read the CSV file
-                csv_data = pd.read_csv(csv_file)
-                st.success("CSV file uploaded and read successfully!")
-    
-                # Read the XLSX file
-                xlsx_data = pd.read_excel(xlsx_file)
-                st.success("XLSX file uploaded and read successfully!")
-    
-                # Validate required columns in CSV
-                required_csv_columns = ["Alarm Raised Date", "Alarm Raised Time", "Active for", "Site", "Alarm Slogan"]
-                if not all(col in csv_data.columns for col in required_csv_columns):
-                    st.error(f"CSV file is missing one or more required columns: {required_csv_columns}")
-                    st.stop()
-    
-                # Validate required columns in XLSX
-                required_xlsx_columns = ["Site Alias", "Zone", "Cluster"]
-                if not all(col in xlsx_data.columns for col in required_xlsx_columns):
-                    st.error(f"XLSX file is missing one or more required columns: {required_xlsx_columns}")
-                    st.stop()
-    
-                # Extract and clean relevant columns from CSV
-                bl_df = csv_data[required_csv_columns].copy()
-                bl_df['Site_Clean'] = bl_df['Site'].str.replace('_X', '', regex=False).str.split(' ').str[0].str.split('(').str[0].str.strip()
-    
-                # Extract and clean relevant columns from XLSX
-                ee_df = xlsx_data[required_xlsx_columns].copy()
-                ee_df['Site_Alias_Clean'] = ee_df['Site Alias'].str.split(' ').str[0].str.split('(').str[0].str.strip()
-    
-                # Merge dataframes on cleaned Site columns
-                merged_df = pd.merge(bl_df, ee_df, left_on='Site_Clean', right_on='Site_Alias_Clean', how='left')
-    
-                # Check for unmatched sites
-                unmatched = merged_df[merged_df['Zone'].isna()]
-                if not unmatched.empty:
-                    st.warning("Some sites did not match and have NaN for Zone and Cluster.")
-                    st.write(unmatched[['Site', 'Site_Clean']])
-    
-                # Select and rename columns as needed
-                final_df = merged_df[[
-                    "Alarm Raised Date",
-                    "Alarm Raised Time",
-                    "Active for",
-                    "Site",
-                    "Alarm Slogan",
-                    "Zone",
-                    "Cluster"
-                ]].copy()
-    
-                # Display the first few rows for verification
-                st.header("Preview of Merged Data")
-                st.dataframe(final_df.head())
-    
-                # Save to SQLite database (in-memory)
-                conn = sqlite3.connect(":memory:")
-                final_df.to_sql('alarms', conn, if_exists='replace', index=False)
-                conn.close()
-    
-                # Provide download link for the final report
-                st.header("Download Final Report")
-                towrite = io.BytesIO()
-                final_df.to_excel(towrite, index=False, engine='openpyxl')
-                towrite.seek(0)
-                st.download_button(
-                    label="📥 Download Final Report as Excel",
-                    data=towrite,
-                    file_name="final_report.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-    
-                st.success("Data processed and report generated successfully!")
-    
-            except Exception as e:
-                st.error(f"An error occurred while processing the files: {e}")
-        else:
-            st.error("Please upload both CSV and XLSX files before processing.")
+# Optional: run in headless mode if needed
+# chrome_options.add_argument("--headless")  
 
-if __name__ == "__main__":
-    main()
+# Set preferences for the default download directory (use the same for both URLs)
+download_dir = "/path/to/your/download/directory"  # Update this to your preferred download folder
+prefs = {"download.default_directory": download_dir}
+chrome_options.add_experimental_option("prefs", prefs)
+
+# Set up WebDriver Manager for Chrome
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+####### PHASE 1 ########
+# Step 1: Open the first login page (Banglalink)
+driver.get("https://ums.banglalink.net/index.php/site/login")
+
+# Give the page some time to load
+time.sleep(2)
+
+# Step 2: Locate the username and password fields and input credentials
+username_field = driver.find_element(By.ID, "LoginForm_username")
+password_field = driver.find_element(By.ID, "LoginForm_password")
+
+# Input your credentials
+username_field.send_keys("r.parves@blmanagedservices.com")
+password_field.send_keys("BLjessore@2024")
+
+# Step 3: Locate and click the login button
+login_button = driver.find_element(By.XPATH, '//button[@type="submit" and contains(@class, "btn-primary")]')
+login_button.click()
+
+# Wait for the next page to load
+time.sleep(5)
+
+# Step 4: Locate the CSV download button and click it
+csv_download_button = driver.find_element(By.XPATH, '//button[contains(@class, "btn_csv_export")]')
+csv_download_button.click()
+
+# Wait for the download to complete (adjust the time as needed)
+time.sleep(10)  # Increase if the download takes longer
+
+# Optionally, check if the file is downloaded in the specified directory
+if os.path.exists(download_dir):
+    print("First CSV file downloaded successfully!")
+
+# Give some delay before moving to the next phase
+time.sleep(2)
+
+####### PHASE 2 ########
+# Step 5: Open the second login page (Eye Electronics)
+driver.get("https://rms.eyeelectronics.net/login")
+
+# Give the page some time to load
+time.sleep(2)
+
+# Step 6: Locate the username and password fields and input credentials
+username_field = driver.find_element(By.NAME, "userName")
+password_field = driver.find_element(By.NAME, "password")
+
+# Input your credentials
+username_field.send_keys("noc@stl")
+password_field.send_keys("ScomNoC!2#")
+
+# Step 7: Locate and click the login button
+login_button = driver.find_element(By.XPATH, '//button[@type="submit" and @label="Login"]')
+login_button.click()
+
+# Wait for the next page to load
+time.sleep(5)
+
+# Step 8: Click on "RMS Stations"
+rms_stations_button = driver.find_element(By.XPATH, '//div[contains(@class, "eye-menu-item") and contains(., "rms stations")]')
+rms_stations_button.click()
+
+# Wait for the page to load
+time.sleep(5)
+
+# Step 9: Click on "All" stations (focus on the label 'All')
+all_stations_button = driver.find_element(By.XPATH, '//div[@class="card-item"]//h4[contains(text(), "All")]')
+all_stations_button.click()
+
+# Wait for the page to load
+time.sleep(5)
+
+# Step 10: Click on the Export button
+export_button = driver.find_element(By.XPATH, '//button[contains(@class, "p-button") and contains(., "Export")]')
+export_button.click()
+
+# Wait for the download to complete (adjust the time as needed)
+time.sleep(10)  # Increase if the download takes longer
+
+# Optionally, check if the file is downloaded in the specified directory
+if os.path.exists(download_dir):
+    print("Second CSV file downloaded successfully!")
+
+# Close the browser after completing both phases
+driver.quit()
