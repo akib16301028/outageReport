@@ -1,7 +1,5 @@
-# requirements.txt
-
-selenium
-webdriver-manager
+streamlit
 pandas
 openpyxl
-streamlit
+selenium
+webdriver-manager
