@@ -1,17 +1,17 @@
-# Alarm Data Processing App
+# SirenStats
 
-This is a Streamlit application that processes alarm data from uploaded CSV and XLSX files.
+**SirenStats** is a Streamlit application designed to process alarm data from Banglalink and Eye Electronics. It automates the downloading of required files and allows users to upload and process them to generate comprehensive reports.
 
-## Requirements
+## Features
 
-- Python 3.x
-- Streamlit
-- Pandas
-- OpenPyXL
+- **Automated Downloading:** Uses Selenium to log in to Banglalink and Eye Electronics websites to download CSV and XLSX files respectively.
+- **Data Processing:** Upload the downloaded files to merge relevant data and generate a final report.
+- **Downloadable Reports:** Provides a downloadable Excel report after processing.
 
-## Installation
+## Setup Instructions
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/yourusername/alarm-data-processing-app.git
-   cd alarm-data-processing-app
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/sirenstats.git
+cd sirenstats
