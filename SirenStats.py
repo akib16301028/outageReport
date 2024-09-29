@@ -1,121 +1,143 @@
-import streamlit as st
+# download.py
+
+import os
+import time
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-import time
-import os
+from webdriver_manager.chrome import ChromeDriverManager
 
-# Function to set up the Chrome WebDriver
+# Configuration
+DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
+
+# Ensure download directory exists
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
+
 def setup_driver():
     chrome_options = Options()
-    chrome_options.add_experimental_option("detach", True)
-    chrome_options.add_argument("--headless")  # Run in headless mode for automation
-    driver_service = Service('chromedriver')  # Ensure chromedriver is in your PATH
-    driver = webdriver.Chrome(service=driver_service, options=chrome_options)
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": DOWNLOAD_DIR,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True
+    })
+    # Uncomment the next line to run Chrome in headless mode
+    # chrome_options.add_argument("--headless")
+    
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     return driver
 
-# Function to download files
-def download_files():
-    driver = setup_driver()
-    
-    # First URL
+def download_banglalink_csv(driver):
+    print("Navigating to Banglalink login page...")
     driver.get("https://ums.banglalink.net/index.php/site/login")
     time.sleep(2)
-    
-    # Log in to Banglalink
+
+    # Log in
+    print("Logging into Banglalink...")
     driver.find_element(By.ID, "LoginForm_username").send_keys("r.parves@blmanagedservices.com")
     driver.find_element(By.ID, "LoginForm_password").send_keys("BLjessore@2024")
-    driver.find_element(By.XPATH, "//button[contains(text(), 'Login')]").click()
+    driver.find_element(By.XPATH, "//button[@type='submit' and contains(@class, 'btn-primary')]").click()
     time.sleep(5)
-    
-    # Click the download button for alarms
-    driver.get("https://ums.banglalink.net/index.php/alarms")
-    time.sleep(2)
-    driver.find_element(By.CLASS_NAME, "btn_csv_export").click()
-    time.sleep(5)  # Wait for download to complete
 
-    # Second URL
+    # Navigate to Alarms page
+    print("Navigating to Alarms page...")
+    driver.get("https://ums.banglalink.net/index.php/alarms")
+    time.sleep(3)
+
+    # Click CSV download button
+    print("Clicking CSV download button...")
+    try:
+        download_button = driver.find_element(By.XPATH, "//button[contains(@class, 'btn_csv_export')]")
+        download_button.click()
+        print("CSV download initiated.")
+    except Exception as e:
+        print(f"Error finding or clicking CSV download button: {e}")
+        return
+
+    # Wait for download to complete
+    time.sleep(10)  # Adjust based on file size and internet speed
+
+    # Rename the downloaded CSV file
+    original_csv = os.path.join(DOWNLOAD_DIR, "alarms.csv")  # Adjust if the filename differs
+    new_csv = os.path.join(DOWNLOAD_DIR, "alarms_report.csv")
+    if os.path.exists(original_csv):
+        os.rename(original_csv, new_csv)
+        print(f"Renamed CSV to: {new_csv}")
+    else:
+        print("CSV file not found after download.")
+
+def download_eyeelectronics_xlsx(driver):
+    print("Navigating to Eye Electronics login page...")
     driver.get("https://rms.eyeelectronics.net/login")
     time.sleep(2)
-    
-    # Log in to Eye Electronics
+
+    # Log in
+    print("Logging into Eye Electronics...")
     driver.find_element(By.NAME, "userName").send_keys("noc@stl")
     driver.find_element(By.NAME, "password").send_keys("ScomNoC!2#")
-    driver.find_element(By.XPATH, "//span[contains(text(), 'Login')]").click()
+    driver.find_element(By.XPATH, "//button[@type='submit' and contains(@class, 'p-button')]").click()
     time.sleep(5)
-    
-    # Navigate to RMS stations
-    driver.find_element(By.XPATH, "//div[contains(text(), 'rms stations')]").click()
-    time.sleep(2)
-    
-    # Select 'All' and export
-    driver.find_element(By.XPATH, "//div[contains(@class, 'item-title')]/h4[contains(text(), 'All')]").click()
-    time.sleep(2)
-    driver.find_element(By.XPATH, "//span[contains(text(), 'Export')]").click()
-    time.sleep(5)  # Wait for download to complete
 
-    driver.quit()
+    # Navigate to RMS Stations
+    print("Navigating to RMS Stations...")
+    try:
+        rms_stations = driver.find_element(By.XPATH, "//div[contains(@class, 'eye-menu-item') and contains(., 'rms stations')]")
+        rms_stations.click()
+        print("Clicked RMS Stations.")
+    except Exception as e:
+        print(f"Error navigating to RMS Stations: {e}")
+        return
 
-# Streamlit app starts here
-st.title("Alarm Data Processing App")
+    time.sleep(5)
 
-# Button to start downloading files
-if st.button("Download Files"):
-    download_files()
-    st.success("Files downloaded successfully! Please upload them below.")
+    # Click on "All" stations
+    print("Selecting 'All' stations...")
+    try:
+        all_stations = driver.find_element(By.XPATH, "//div[@class='card-item']//h4[contains(text(), 'All')]")
+        all_stations.click()
+        print("Clicked 'All' stations.")
+    except Exception as e:
+        print(f"Error selecting 'All' stations: {e}")
+        return
 
-# File upload section
-csv_file = st.file_uploader("Upload CSV file from Banglalink Alarms", type=["csv"])
-xlsx_file = st.file_uploader("Upload XLSX file from Eye Electronics", type=["xlsx"])
+    time.sleep(5)
 
-if csv_file and xlsx_file:
-    # Read the CSV file
-    csv_data = pd.read_csv(csv_file)
-    
-    # Read the XLSX file
-    xlsx_data = pd.read_excel(xlsx_file)
-    
-    # Prepare to merge data
-    merged_data = []
+    # Click Export button
+    print("Clicking Export button...")
+    try:
+        export_button = driver.find_element(By.XPATH, "//button[contains(@class, 'p-button') and contains(., 'Export')]")
+        export_button.click()
+        print("Export download initiated.")
+    except Exception as e:
+        print(f"Error finding or clicking Export button: {e}")
+        return
 
-    for _, row in csv_data.iterrows():
-        site_name = row['Site']
-        # Process site name to match with Site Alias in the XLSX file
-        processed_site_name = site_name.replace("_X", "").split(" (")[0]
-        
-        # Find the matching zone and cluster
-        matching_row = xlsx_data[xlsx_data['Site Alias'].str.contains(processed_site_name, na=False, regex=False)]
-        
-        if not matching_row.empty:
-            zone = matching_row['Zone'].values[0]
-            cluster = matching_row['Cluster'].values[0]
-            merged_data.append({
-                "Alarm Raised Date": row["Alarm Raised Date"],
-                "Alarm Raised Time": row["Alarm Raised Time"],
-                "Active for": row["Active for"],
-                "Site": site_name,
-                "Alarm Slogan": row["Alarm Slogan"],
-                "Zone": zone,
-                "Cluster": cluster
-            })
+    # Wait for download to complete
+    time.sleep(15)  # Adjust based on file size and internet speed
 
-    # Create a DataFrame from merged data
-    final_df = pd.DataFrame(merged_data)
+    # Rename the downloaded XLSX file
+    # The filename format: RMS Station Status Report(September 30th 2024, 1_33_01 am).xlsx
+    # We'll search for the latest XLSX file containing 'RMS Station Status Report'
+    files = [f for f in os.listdir(DOWNLOAD_DIR) if f.endswith(".xlsx") and "RMS Station Status Report" in f]
+    if files:
+        latest_file = max([os.path.join(DOWNLOAD_DIR, f) for f in files], key=os.path.getmtime)
+        new_xlsx = os.path.join(DOWNLOAD_DIR, "rms_station_report.xlsx")
+        os.rename(latest_file, new_xlsx)
+        print(f"Renamed XLSX to: {new_xlsx}")
+    else:
+        print("XLSX file not found after download.")
 
-    # Save the final DataFrame to a new Excel file
-    final_output_filename = "final_report.xlsx"
-    final_df.to_excel(final_output_filename, index=False)
+def main():
+    driver = setup_driver()
+    try:
+        download_banglalink_csv(driver)
+        download_eyeelectronics_xlsx(driver)
+    finally:
+        driver.quit()
+        print("Browser closed.")
 
-    # Provide download link for the final report
-    st.success("Data processed successfully!")
-    st.write("Download the final report:")
-    st.download_button(
-        label="Download Final Report",
-        data=final_df.to_excel(index=False, engine='openpyxl'),
-        file_name=final_output_filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-else:
-    st.warning("Please upload both CSV and XLSX files to process the data.")
+if __name__ == "__main__":
+    main()
