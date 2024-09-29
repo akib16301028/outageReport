@@ -2,7 +2,6 @@
 import streamlit as st
 from playwright.sync_api import sync_playwright
 import os
-import time
 import glob
 
 # Function to download CSV from Banglalink
@@ -21,7 +20,7 @@ def download_banglalink_csv(download_dir, username, password):
         # Click login
         page.click('button[type="submit"].btn-primary')
         
-        # Wait for navigation
+        # Wait for navigation to complete
         page.wait_for_load_state("networkidle")
         
         # Click CSV download button
@@ -48,7 +47,7 @@ def download_eyeelectronics_csv(download_dir, username, password):
         # Click login
         page.click('button[type="submit"][label="Login"]')
         
-        # Wait for navigation
+        # Wait for navigation to complete
         page.wait_for_load_state("networkidle")
         
         # Click on "RMS Stations"
