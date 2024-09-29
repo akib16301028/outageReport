@@ -1,2 +1,7 @@
+# requirements.txt
+
+selenium
+webdriver-manager
+pandas
+openpyxl
 streamlit
-playwright
