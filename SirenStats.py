@@ -9,10 +9,11 @@ import tempfile
 
 def download_csv():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless")  # Run in headless mode
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
+    # Use a temporary directory for downloads
     download_dir = tempfile.gettempdir()
     prefs = {"download.default_directory": download_dir}
     chrome_options.add_experimental_option("prefs", prefs)
@@ -25,8 +26,8 @@ def download_csv():
 
     username_field = driver.find_element(By.ID, "LoginForm_username")
     password_field = driver.find_element(By.ID, "LoginForm_password")
-    username_field.send_keys(st.secrets["banglalink"]["username"])
-    password_field.send_keys(st.secrets["banglalink"]["password"])
+    username_field.send_keys(st.secrets["banglalink_username"])  # Use secrets for sensitive data
+    password_field.send_keys(st.secrets["banglalink_password"])
 
     login_button = driver.find_element(By.XPATH, '//button[@type="submit" and contains(@class, "btn-primary")]')
     login_button.click()
@@ -43,8 +44,8 @@ def download_csv():
 
     username_field = driver.find_element(By.NAME, "userName")
     password_field = driver.find_element(By.NAME, "password")
-    username_field.send_keys(st.secrets["eye"]["username"])
-    password_field.send_keys(st.secrets["eye"]["password"])
+    username_field.send_keys(st.secrets["eye_username"])  # Use secrets for sensitive data
+    password_field.send_keys(st.secrets["eye_password"])
 
     login_button = driver.find_element(By.XPATH, '//button[@type="submit" and @label="Login"]')
     login_button.click()
