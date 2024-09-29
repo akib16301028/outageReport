@@ -1,3 +1,4 @@
+import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -5,103 +6,166 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 import time
 import os
+import glob
 
-# Set up Chrome options (this will enable file downloads)
-chrome_options = Options()
+# Function to set up Selenium WebDriver
+def setup_driver(download_dir):
+    chrome_options = Options()
+    # Run in headless mode for server environments
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    prefs = {"download.default_directory": download_dir,
+             "download.prompt_for_download": False,
+             "download.directory_upgrade": True,
+             "safebrowsing.enabled": True}
+    chrome_options.add_experimental_option("prefs", prefs)
+    
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
 
-# Optional: run in headless mode if needed
-# chrome_options.add_argument("--headless")  
+# Function to download CSV from Banglalink
+def download_banglalink_csv(driver, download_dir, username, password):
+    driver.get("https://ums.banglalink.net/index.php/site/login")
+    time.sleep(2)
+    
+    username_field = driver.find_element(By.ID, "LoginForm_username")
+    password_field = driver.find_element(By.ID, "LoginForm_password")
+    
+    username_field.send_keys(username)
+    password_field.send_keys(password)
+    
+    login_button = driver.find_element(By.XPATH, '//button[@type="submit" and contains(@class, "btn-primary")]')
+    login_button.click()
+    
+    time.sleep(5)
+    
+    csv_download_button = driver.find_element(By.XPATH, '//button[contains(@class, "btn_csv_export")]')
+    csv_download_button.click()
+    
+    time.sleep(10)  # Adjust as needed
 
-# Set preferences for the default download directory (use the same for both URLs)
-download_dir = "/path/to/your/download/directory"  # Update this to your preferred download folder
-prefs = {"download.default_directory": download_dir}
-chrome_options.add_experimental_option("prefs", prefs)
+# Function to download CSV from Eye Electronics
+def download_eyeelectronics_csv(driver, download_dir, username, password):
+    driver.get("https://rms.eyeelectronics.net/login")
+    time.sleep(2)
+    
+    username_field = driver.find_element(By.NAME, "userName")
+    password_field = driver.find_element(By.NAME, "password")
+    
+    username_field.send_keys(username)
+    password_field.send_keys(password)
+    
+    login_button = driver.find_element(By.XPATH, '//button[@type="submit" and @label="Login"]')
+    login_button.click()
+    
+    time.sleep(5)
+    
+    rms_stations_button = driver.find_element(By.XPATH, '//div[contains(@class, "eye-menu-item") and contains(., "rms stations")]')
+    rms_stations_button.click()
+    
+    time.sleep(5)
+    
+    all_stations_button = driver.find_element(By.XPATH, '//div[@class="card-item"]//h4[contains(text(), "All")]')
+    all_stations_button.click()
+    
+    time.sleep(5)
+    
+    export_button = driver.find_element(By.XPATH, '//button[contains(@class, "p-button") and contains(., "Export")]')
+    export_button.click()
+    
+    time.sleep(10)  # Adjust as needed
 
-# Set up WebDriver Manager for Chrome
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+# Function to get the latest downloaded file
+def get_latest_file(download_dir, extension="csv"):
+    list_of_files = glob.glob(os.path.join(download_dir, f"*.{extension}"))
+    if not list_of_files:
+        return None
+    latest_file = max(list_of_files, key=os.path.getctime)
+    return latest_file
 
-####### PHASE 1 ########
-# Step 1: Open the first login page (Banglalink)
-driver.get("https://ums.banglalink.net/index.php/site/login")
+def main():
+    st.title("Automated CSV Downloader")
 
-# Give the page some time to load
-time.sleep(2)
+    st.markdown("""
+    This application automates the downloading of CSV files from Banglalink and Eye Electronics platforms.
+    """)
 
-# Step 2: Locate the username and password fields and input credentials
-username_field = driver.find_element(By.ID, "LoginForm_username")
-password_field = driver.find_element(By.ID, "LoginForm_password")
+    # Define download directory
+    download_dir = os.path.join(os.getcwd(), "downloads")
+    os.makedirs(download_dir, exist_ok=True)
 
-# Input your credentials
-username_field.send_keys("r.parves@blmanagedservices.com")
-password_field.send_keys("BLjessore@2024")
+    # Initialize session state to store file paths
+    if 'banglalink_file' not in st.session_state:
+        st.session_state.banglalink_file = None
+    if 'eyeelectronics_file' not in st.session_state:
+        st.session_state.eyeelectronics_file = None
 
-# Step 3: Locate and click the login button
-login_button = driver.find_element(By.XPATH, '//button[@type="submit" and contains(@class, "btn-primary")]')
-login_button.click()
+    # Button to download Banglalink CSV
+    if st.button("Download Banglalink CSV"):
+        with st.spinner("Downloading Banglalink CSV..."):
+            driver = setup_driver(download_dir)
+            try:
+                download_banglalink_csv(
+                    driver,
+                    download_dir,
+                    st.secrets["banglalink"]["username"],
+                    st.secrets["banglalink"]["password"]
+                )
+                driver.quit()
+                latest_file = get_latest_file(download_dir)
+                if latest_file:
+                    st.session_state.banglalink_file = latest_file
+                    st.success("Banglalink CSV downloaded successfully!")
+                else:
+                    st.error("Failed to download Banglalink CSV.")
+            except Exception as e:
+                driver.quit()
+                st.error(f"An error occurred: {e}")
 
-# Wait for the next page to load
-time.sleep(5)
+    # Button to download Eye Electronics CSV
+    if st.button("Download Eye Electronics CSV"):
+        with st.spinner("Downloading Eye Electronics CSV..."):
+            driver = setup_driver(download_dir)
+            try:
+                download_eyeelectronics_csv(
+                    driver,
+                    download_dir,
+                    st.secrets["eyeelectronics"]["username"],
+                    st.secrets["eyeelectronics"]["password"]
+                )
+                driver.quit()
+                latest_file = get_latest_file(download_dir)
+                if latest_file:
+                    st.session_state.eyeelectronics_file = latest_file
+                    st.success("Eye Electronics CSV downloaded successfully!")
+                else:
+                    st.error("Failed to download Eye Electronics CSV.")
+            except Exception as e:
+                driver.quit()
+                st.error(f"An error occurred: {e}")
 
-# Step 4: Locate the CSV download button and click it
-csv_download_button = driver.find_element(By.XPATH, '//button[contains(@class, "btn_csv_export")]')
-csv_download_button.click()
+    # Display download links
+    st.header("Downloaded Files")
 
-# Wait for the download to complete (adjust the time as needed)
-time.sleep(10)  # Increase if the download takes longer
+    if st.session_state.banglalink_file:
+        with open(st.session_state.banglalink_file, "rb") as file:
+            btn = st.download_button(
+                label="Download Banglalink CSV",
+                data=file,
+                file_name=os.path.basename(st.session_state.banglalink_file),
+                mime="text/csv"
+            )
 
-# Optionally, check if the file is downloaded in the specified directory
-if os.path.exists(download_dir):
-    print("First CSV file downloaded successfully!")
+    if st.session_state.eyeelectronics_file:
+        with open(st.session_state.eyeelectronics_file, "rb") as file:
+            btn = st.download_button(
+                label="Download Eye Electronics CSV",
+                data=file,
+                file_name=os.path.basename(st.session_state.eyeelectronics_file),
+                mime="text/csv"
+            )
 
-# Give some delay before moving to the next phase
-time.sleep(2)
-
-####### PHASE 2 ########
-# Step 5: Open the second login page (Eye Electronics)
-driver.get("https://rms.eyeelectronics.net/login")
-
-# Give the page some time to load
-time.sleep(2)
-
-# Step 6: Locate the username and password fields and input credentials
-username_field = driver.find_element(By.NAME, "userName")
-password_field = driver.find_element(By.NAME, "password")
-
-# Input your credentials
-username_field.send_keys("noc@stl")
-password_field.send_keys("ScomNoC!2#")
-
-# Step 7: Locate and click the login button
-login_button = driver.find_element(By.XPATH, '//button[@type="submit" and @label="Login"]')
-login_button.click()
-
-# Wait for the next page to load
-time.sleep(5)
-
-# Step 8: Click on "RMS Stations"
-rms_stations_button = driver.find_element(By.XPATH, '//div[contains(@class, "eye-menu-item") and contains(., "rms stations")]')
-rms_stations_button.click()
-
-# Wait for the page to load
-time.sleep(5)
-
-# Step 9: Click on "All" stations (focus on the label 'All')
-all_stations_button = driver.find_element(By.XPATH, '//div[@class="card-item"]//h4[contains(text(), "All")]')
-all_stations_button.click()
-
-# Wait for the page to load
-time.sleep(5)
-
-# Step 10: Click on the Export button
-export_button = driver.find_element(By.XPATH, '//button[contains(@class, "p-button") and contains(., "Export")]')
-export_button.click()
-
-# Wait for the download to complete (adjust the time as needed)
-time.sleep(10)  # Increase if the download takes longer
-
-# Optionally, check if the file is downloaded in the specified directory
-if os.path.exists(download_dir):
-    print("Second CSV file downloaded successfully!")
-
-# Close the browser after completing both phases
-driver.quit()
+if __name__ == "__main__":
+    main()
