@@ -55,14 +55,21 @@ def main():
                 
                 # Extract and clean relevant columns from CSV
                 bl_df = csv_data[required_csv_columns].copy()
-                bl_df['Site_Clean'] = bl_df['Site'].str.replace('_X', '', regex=False)\
-                                                .str.extract(r'^(\w+)')[0]\
-                                                .str.strip()
+                bl_df['Site_Clean'] = (
+                    bl_df['Site']
+                    .str.replace('_X', '', regex=False)  # Remove '_X'
+                    .str.split(' ').str[0]               # Remove anything after space
+                    .str.split('(').str[0]               # Remove anything after '('
+                    .str.strip()                          # Trim whitespace
+                )
                 
                 # Extract and clean relevant columns from XLSX
                 ee_df = xlsx_data[required_xlsx_columns].copy()
-                ee_df['Site_Alias_Clean'] = ee_df['Site Alias'].str.replace(r'\s*\(.*\)', '', regex=True)\
-                                                            .str.strip()
+                ee_df['Site_Alias_Clean'] = (
+                    ee_df['Site Alias']
+                    .str.replace(r'\s*\(.*\)', '', regex=True)  # Remove anything after space and '('
+                    .str.strip()                                # Trim whitespace
+                )
                 
                 # Display cleaned columns for debugging
                 st.subheader("Cleaned CSV 'Site' Column")
@@ -72,9 +79,13 @@ def main():
                 st.write(ee_df['Site_Alias_Clean'].head())
                 
                 # Merge dataframes on cleaned Site columns
-                merged_df = pd.merge(bl_df, ee_df[['Site_Alias_Clean', 'Zone', 'Cluster']], 
-                                     left_on='Site_Clean', right_on='Site_Alias_Clean', 
-                                     how='left')
+                merged_df = pd.merge(
+                    bl_df, 
+                    ee_df[['Site_Alias_Clean', 'Site Alias', 'Zone', 'Cluster']], 
+                    left_on='Site_Clean', 
+                    right_on='Site_Alias_Clean', 
+                    how='left'
+                )
                 
                 # Check for unmatched sites
                 unmatched = merged_df[merged_df['Zone'].isna()]
@@ -89,6 +100,7 @@ def main():
                     "Active for",
                     "Site",
                     "Alarm Slogan",
+                    "Site Alias",  # Include 'Site Alias' from XLSX
                     "Zone",
                     "Cluster"
                 ]].copy()
