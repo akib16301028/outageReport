@@ -81,7 +81,6 @@ def process_files(csv_file, xlsx_file):
         final_df = merged_df[[
             "Alarm Raised Date",
             "Alarm Raised Time",
-            "Active for",
             "Site",
             "Alarm Slogan",
             "Service Type",
