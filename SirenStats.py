@@ -52,7 +52,7 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         
         # Check if login was successful by checking the presence of a logout link or dashboard element
         dashboard_soup = BeautifulSoup(response.text, 'html.parser')
-        if dashboard_soup.find('a', text='Logout') is None:
+        if dashboard_soup.find('a', string='Logout') is None:  # Updated here
             st.error("Login failed. Please check your credentials.")
             return None
         
@@ -68,7 +68,7 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         page_soup = BeautifulSoup(page.text, 'html.parser')
         
         # Find the CSV download button
-        csv_button = page_soup.find('span', text='CSV')
+        csv_button = page_soup.find('span', string='CSV')  # Updated here
         if not csv_button:
             st.error("CSV download button not found.")
             return None
