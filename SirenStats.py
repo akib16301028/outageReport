@@ -7,7 +7,7 @@ from io import BytesIO
 import time  # Import time module for sleep
 
 # Function to perform login and download CSV from Banglalink
-def login_and_download_csv_banglalink(login_url, csv_button_url, username, password):
+def login_and_download_csv_banglalink(login_url, username, password):
     with requests.Session() as session:
         # Step 1: Get the login page to retrieve any hidden form data (e.g., CSRF tokens)
         login_page = session.get(login_url)
@@ -65,14 +65,24 @@ def login_and_download_csv_banglalink(login_url, csv_button_url, username, passw
         
         page_soup = BeautifulSoup(page.text, 'html.parser')
         
-        # Find the CSV download button
-        csv_button = page_soup.find('button', class_='btn_csv_export')
+        # Find the CSV download button using the <span> containing "CSV"
+        csv_button = page_soup.find('span', string='CSV')
         if not csv_button:
             st.error("Banglalink CSV download button not found.")
             return None
         
+        # Extract the parent button that contains the download functionality
+        csv_button_parent = csv_button.find_parent('button')
+        if csv_button_parent and 'data-url' in csv_button_parent.attrs:
+            csv_download_url = csv_button_parent['data-url']
+        else:
+            st.error("Banglalink CSV download URL not found.")
+            return None
+        
+        # Construct full CSV download URL
+        csv_download_url = urljoin(csv_button_page_url, csv_download_url)
+        
         # Download the CSV file
-        csv_download_url = urljoin(csv_button_page_url, csv_button['data-url'])  # Ensure the attribute is correct
         csv_response = session.get(csv_download_url)
         if csv_response.status_code != 200:
             st.error(f"Failed to download Banglalink CSV. Status code: {csv_response.status_code}")
@@ -178,7 +188,7 @@ except KeyError:
 if st.button("Login and Download CSV from Banglalink"):
     login_url_banglalink = "https://ums.banglalink.net/index.php/site/login"
     
-    result_banglalink = login_and_download_csv_banglalink(login_url_banglalink, login_url_banglalink, username, password)
+    result_banglalink = login_and_download_csv_banglalink(login_url_banglalink, username, password)
     
     if result_banglalink:
         df_banglalink, csv_content_banglalink = result_banglalink
