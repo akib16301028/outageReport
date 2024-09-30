@@ -68,14 +68,16 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         page_soup = BeautifulSoup(page.text, 'html.parser')
         
         # Find the CSV download button
-        csv_button = page_soup.find('button', {'class': 'dt-button btn btn-default btn-sm btn_csv_export'})
+        csv_button = page_soup.find('span', text='CSV')
         if not csv_button:
             st.error("CSV download button not found.")
             return None
         
-        # Extract the CSV download URL
-        csv_download_url = csv_button.get('data-url')
-        if not csv_download_url:
+        # Extract the parent element that contains the data-url attribute
+        csv_button_parent = csv_button.find_parent()
+        if csv_button_parent and 'data-url' in csv_button_parent.attrs:
+            csv_download_url = csv_button_parent['data-url']
+        else:
             st.error("CSV download URL not found in the button attributes.")
             return None
         
