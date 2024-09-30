@@ -24,7 +24,7 @@ def process_files(csv_file, xlsx_file):
         st.write(xlsx_data.columns.tolist())
 
         # Validate required columns in CSV
-        required_csv_columns = ["Alarm Raised Date", "Alarm Raised Time", "Active for", "Site", "Alarm Slogan"]
+        required_csv_columns = ["Alarm Raised Date", "Alarm Raised Time", "Site", "Alarm Slogan", "Service Type", "Mini-Hub", "Power Status"]
         missing_csv_columns = [col for col in required_csv_columns if col not in csv_data.columns]
         if missing_csv_columns:
             st.error(f"CSV file is missing one or more required columns: {missing_csv_columns}")
@@ -84,6 +84,9 @@ def process_files(csv_file, xlsx_file):
             "Active for",
             "Site",
             "Alarm Slogan",
+            "Service Type",
+            "Mini-Hub",
+            "Power Status",
             "Site Alias",  # Include 'Site Alias' from XLSX
             "Zone",
             "Cluster"
