@@ -1,38 +1,140 @@
+# app.py
+
 import streamlit as st
 import pandas as pd
 import sqlite3
 import io
 import os
-import requests
-from bs4 import BeautifulSoup
+import shutil
+import time
 
-# Function to download files from the specified URLs
-def download_files():
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+
+# Function to set up the Chrome WebDriver
+def setup_driver(download_dir):
+    chrome_options = Options()
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": download_dir,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True
+    })
+    chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
+
+# Function to download Banglalink CSV
+def download_banglalink_csv(driver, download_dir):
+    st.info("Downloading Banglalink Alarms CSV...")
+    driver.get("https://ums.banglalink.net/index.php/site/login")
+    time.sleep(2)
+
+    # Log in to Banglalink
+    driver.find_element(By.ID, "LoginForm_username").send_keys("r.parves@blmanagedservices.com")
+    driver.find_element(By.ID, "LoginForm_password").send_keys("BLjessore@2024")
+    driver.find_element(By.XPATH, "//button[contains(@class, 'btn-primary')]").click()
+    time.sleep(5)
+
+    # Navigate to Alarms page
+    driver.get("https://ums.banglalink.net/index.php/alarms")
+    time.sleep(2)
+
+    # Click CSV download button
     try:
-        # URL for Banglalink Alarms
-        banglalink_url = "https://ums.banglalink.net/index.php/site/login"
-        # Here you would implement the login process if needed
-        
-        # For now, let's directly download the CSV
-        response = requests.get("https://ums.banglalink.net/index.php/alarms")
-        with open("banglalink_alarms.csv", "wb") as f:
-            f.write(response.content)
-        
-        st.success("Successfully downloaded Banglalink Alarms CSV file.")
-
-        # URL for Eye Electronics
-        eye_electronics_url = "https://rms.eyeelectronics.net/login"
-        # Here you would implement the login process if needed
-        
-        # For now, let's directly download the XLSX
-        response = requests.get("https://rms.eyeelectronics.net/login")  # Replace with actual URL for the XLSX
-        with open("eye_electronics_data.xlsx", "wb") as f:
-            f.write(response.content)
-
-        st.success("Successfully downloaded Eye Electronics XLSX file.")
-
+        download_button = driver.find_element(By.XPATH, "//button[contains(@class, 'btn_csv_export')]")
+        download_button.click()
+        st.success("Banglalink Alarms CSV download initiated.")
     except Exception as e:
-        st.error(f"An error occurred while downloading files: {e}")
+        st.error(f"Failed to initiate Banglalink CSV download: {e}")
+        return
+
+    # Wait for download to complete
+    time.sleep(10)  # Adjust based on file size and internet speed
+
+    # Rename the downloaded CSV file
+    original_csv = os.path.join(download_dir, "alarms.csv")  # Adjust if filename differs
+    new_csv = os.path.join(download_dir, "alarms_report.csv")
+    if os.path.exists(original_csv):
+        os.rename(original_csv, new_csv)
+        st.success(f"Renamed CSV to: {new_csv}")
+    else:
+        st.error("CSV file not found after download.")
+
+# Function to download Eye Electronics XLSX
+def download_eye_electronics_xlsx(driver, download_dir):
+    st.info("Downloading Eye Electronics XLSX...")
+    driver.get("https://rms.eyeelectronics.net/login")
+    time.sleep(2)
+
+    # Log in to Eye Electronics
+    driver.find_element(By.NAME, "userName").send_keys("noc@stl")
+    driver.find_element(By.NAME, "password").send_keys("ScomNoC!2#")
+    driver.find_element(By.XPATH, "//button[contains(@class, 'p-button-label') and span[text()='Login']]").click()
+    time.sleep(5)
+
+    # Navigate to RMS Stations
+    try:
+        driver.find_element(By.XPATH, "//span[text()='rms stations']").click()
+        st.success("Navigated to RMS Stations.")
+    except Exception as e:
+        st.error(f"Failed to navigate to RMS Stations: {e}")
+        return
+
+    time.sleep(2)
+
+    # Click on "All" stations
+    try:
+        driver.find_element(By.XPATH, "//h4[text()='All']").click()
+        st.success("Clicked on 'All' stations.")
+    except Exception as e:
+        st.error(f"Failed to click on 'All' stations: {e}")
+        return
+
+    time.sleep(2)
+
+    # Click Export button
+    try:
+        driver.find_element(By.XPATH, "//span[text()='Export']").click()
+        st.success("Export download initiated.")
+    except Exception as e:
+        st.error(f"Failed to initiate Export download: {e}")
+        return
+
+    # Wait for download to complete
+    time.sleep(15)  # Adjust based on file size and internet speed
+
+    # Rename the downloaded XLSX file
+    # Assuming filename pattern: RMS Station Status Report(September 30th 2024, 1_33_01 am).xlsx
+    files = [f for f in os.listdir(download_dir) if f.endswith(".xlsx") and "RMS Station Status Report" in f]
+    if files:
+        latest_file = max([os.path.join(download_dir, f) for f in files], key=os.path.getmtime)
+        new_xlsx = os.path.join(download_dir, "rms_station_report.xlsx")
+        os.rename(latest_file, new_xlsx)
+        st.success(f"Renamed XLSX to: {new_xlsx}")
+    else:
+        st.error("XLSX file not found after download.")
+
+# Function to download files automatically
+def automate_download():
+    download_dir = os.path.join(os.getcwd(), "downloads")
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+    
+    driver = setup_driver(download_dir)
+    
+    try:
+        download_banglalink_csv(driver, download_dir)
+        download_eye_electronics_xlsx(driver, download_dir)
+    finally:
+        driver.quit()
+        st.info("Browser closed after downloading.")
 
 # Function to process uploaded files
 def process_files(csv_file, xlsx_file):
@@ -44,6 +146,13 @@ def process_files(csv_file, xlsx_file):
         # Read the XLSX file with header in row 3 (zero-based index 2)
         xlsx_data = pd.read_excel(xlsx_file, header=2)
         st.success("XLSX file uploaded and read successfully!")
+
+        # Display columns for debugging
+        st.subheader("CSV File Columns")
+        st.write(csv_data.columns.tolist())
+
+        st.subheader("XLSX File Columns")
+        st.write(xlsx_data.columns.tolist())
 
         # Validate required columns in CSV
         required_csv_columns = ["Alarm Raised Date", "Alarm Raised Time", "Site", "Alarm Slogan", "Service Type", "Mini-Hub", "Power Status"]
@@ -77,6 +186,13 @@ def process_files(csv_file, xlsx_file):
             .str.strip()
         )
 
+        # Display cleaned columns for debugging
+        st.subheader("Cleaned CSV 'Site' Column")
+        st.write(bl_df['Site_Clean'].head())
+
+        st.subheader("Cleaned XLSX 'Site Alias' Column")
+        st.write(ee_df['Site_Alias_Clean'].head())
+
         # Merge dataframes on cleaned Site columns
         merged_df = pd.merge(
             bl_df, 
@@ -93,7 +209,7 @@ def process_files(csv_file, xlsx_file):
             st.write(unmatched[['Site', 'Site_Clean']])
 
         # Select and rename columns as needed
-        final_df = merged_df[[  # Select required columns
+        final_df = merged_df[[
             "Alarm Raised Date",
             "Alarm Raised Time",
             "Site",
@@ -110,7 +226,7 @@ def process_files(csv_file, xlsx_file):
         st.header("Preview of Merged Data")
         st.dataframe(final_df.head())
 
-        # Save to SQLite database (in-memory)
+        # Optionally, save to SQLite database (in-memory)
         conn = sqlite3.connect(":memory:")
         final_df.to_sql('alarms', conn, if_exists='replace', index=False)
         conn.close()
@@ -135,19 +251,23 @@ def process_files(csv_file, xlsx_file):
 # Streamlit app starts here
 def main():
     st.title("SirenStats - Alarm Data Processing App")
-    
+
     st.markdown("""\
     **SirenStats** is a Streamlit application that processes alarm data by merging relevant information
     from Banglalink and Eye Electronics and generates a comprehensive report.
     """)
-    
-    st.header("Download Files")
-    if st.button("Download Required Files"):
-        download_files()
+
+    st.header("Automate File Downloads")
+    st.markdown("""
+    Click the button below to automatically download the required CSV and XLSX files from Banglalink and Eye Electronics.
+    """)
+
+    if st.button("Download Files Automatically"):
+        automate_download()
 
     st.header("Upload and Process Files")
-    st.markdown("""\
-    Manually upload the CSV and XLSX files to process and generate the final report.
+    st.markdown("""
+    If you prefer to download the files manually or after the automated download completes, you can upload them here to process and generate the final report.
     """)
 
     # File upload section
