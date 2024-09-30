@@ -8,133 +8,106 @@ import os
 import shutil
 import time
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+from playwright.sync_api import sync_playwright
 
-# Function to set up the Chrome WebDriver
-def setup_driver(download_dir):
-    chrome_options = Options()
-    chrome_options.add_experimental_option("prefs", {
-        "download.default_directory": download_dir,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True
-    })
-    chrome_options.add_argument("--headless")  # Run in headless mode
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    return driver
-
-# Function to download Banglalink CSV
-def download_banglalink_csv(driver, download_dir):
-    st.info("Downloading Banglalink Alarms CSV...")
-    driver.get("https://ums.banglalink.net/index.php/site/login")
-    time.sleep(2)
-
-    # Log in to Banglalink
-    driver.find_element(By.ID, "LoginForm_username").send_keys("r.parves@blmanagedservices.com")
-    driver.find_element(By.ID, "LoginForm_password").send_keys("BLjessore@2024")
-    driver.find_element(By.XPATH, "//button[contains(@class, 'btn-primary')]").click()
-    time.sleep(5)
-
-    # Navigate to Alarms page
-    driver.get("https://ums.banglalink.net/index.php/alarms")
-    time.sleep(2)
-
-    # Click CSV download button
-    try:
-        download_button = driver.find_element(By.XPATH, "//button[contains(@class, 'btn_csv_export')]")
-        download_button.click()
-        st.success("Banglalink Alarms CSV download initiated.")
-    except Exception as e:
-        st.error(f"Failed to initiate Banglalink CSV download: {e}")
-        return
-
-    # Wait for download to complete
-    time.sleep(10)  # Adjust based on file size and internet speed
-
-    # Rename the downloaded CSV file
-    original_csv = os.path.join(download_dir, "alarms.csv")  # Adjust if filename differs
-    new_csv = os.path.join(download_dir, "alarms_report.csv")
-    if os.path.exists(original_csv):
-        os.rename(original_csv, new_csv)
-        st.success(f"Renamed CSV to: {new_csv}")
-    else:
-        st.error("CSV file not found after download.")
-
-# Function to download Eye Electronics XLSX
-def download_eye_electronics_xlsx(driver, download_dir):
-    st.info("Downloading Eye Electronics XLSX...")
-    driver.get("https://rms.eyeelectronics.net/login")
-    time.sleep(2)
-
-    # Log in to Eye Electronics
-    driver.find_element(By.NAME, "userName").send_keys("noc@stl")
-    driver.find_element(By.NAME, "password").send_keys("ScomNoC!2#")
-    driver.find_element(By.XPATH, "//button[contains(@class, 'p-button-label') and span[text()='Login']]").click()
-    time.sleep(5)
-
-    # Navigate to RMS Stations
-    try:
-        driver.find_element(By.XPATH, "//span[text()='rms stations']").click()
-        st.success("Navigated to RMS Stations.")
-    except Exception as e:
-        st.error(f"Failed to navigate to RMS Stations: {e}")
-        return
-
-    time.sleep(2)
-
-    # Click on "All" stations
-    try:
-        driver.find_element(By.XPATH, "//h4[text()='All']").click()
-        st.success("Clicked on 'All' stations.")
-    except Exception as e:
-        st.error(f"Failed to click on 'All' stations: {e}")
-        return
-
-    time.sleep(2)
-
-    # Click Export button
-    try:
-        driver.find_element(By.XPATH, "//span[text()='Export']").click()
-        st.success("Export download initiated.")
-    except Exception as e:
-        st.error(f"Failed to initiate Export download: {e}")
-        return
-
-    # Wait for download to complete
-    time.sleep(15)  # Adjust based on file size and internet speed
-
-    # Rename the downloaded XLSX file
-    # Assuming filename pattern: RMS Station Status Report(September 30th 2024, 1_33_01 am).xlsx
-    files = [f for f in os.listdir(download_dir) if f.endswith(".xlsx") and "RMS Station Status Report" in f]
-    if files:
-        latest_file = max([os.path.join(download_dir, f) for f in files], key=os.path.getmtime)
-        new_xlsx = os.path.join(download_dir, "rms_station_report.xlsx")
-        os.rename(latest_file, new_xlsx)
-        st.success(f"Renamed XLSX to: {new_xlsx}")
-    else:
-        st.error("XLSX file not found after download.")
-
-# Function to download files automatically
-def automate_download():
+# Function to set up the download directory
+def setup_download_directory():
     download_dir = os.path.join(os.getcwd(), "downloads")
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
-    
-    driver = setup_driver(download_dir)
-    
-    try:
-        download_banglalink_csv(driver, download_dir)
-        download_eye_electronics_xlsx(driver, download_dir)
-    finally:
-        driver.quit()
-        st.info("Browser closed after downloading.")
+    return download_dir
+
+# Function to automate downloading using Playwright
+def automate_download(download_dir):
+    with sync_playwright() as p:
+        # Launch browser in headless mode
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            accept_downloads=True,
+            downloads_path=download_dir
+        )
+        page = context.new_page()
+
+        # ---------------------------
+        # Download Banglalink Alarms CSV
+        # ---------------------------
+        st.info("Downloading Banglalink Alarms CSV...")
+
+        try:
+            # Navigate to Banglalink login page
+            page.goto("https://ums.banglalink.net/index.php/site/login")
+            time.sleep(2)  # Wait for page to load
+
+            # Fill in login form
+            page.fill("input#LoginForm_username", "r.parves@blmanagedservices.com")
+            page.fill("input#LoginForm_password", "BLjessore@2024")
+
+            # Click the login button
+            page.click("button.btn-primary")
+
+            # Wait for navigation after login
+            page.wait_for_url("https://ums.banglalink.net/index.php/dashboard", timeout=10000)
+
+            st.success("Logged into Banglalink successfully.")
+
+            # Navigate to Alarms page
+            page.goto("https://ums.banglalink.net/index.php/alarms")
+            time.sleep(2)  # Wait for page to load
+
+            # Click the CSV download button and wait for download
+            with page.expect_download() as download_info:
+                page.click("button.btn_csv_export")
+            download = download_info.value
+            download.save_as(os.path.join(download_dir, "alarms_report.csv"))
+
+            st.success("Banglalink Alarms CSV downloaded successfully.")
+
+        except Exception as e:
+            st.error(f"Failed to download Banglalink Alarms CSV: {e}")
+
+        # ---------------------------
+        # Download Eye Electronics XLSX
+        # ---------------------------
+        st.info("Downloading Eye Electronics XLSX...")
+
+        try:
+            # Navigate to Eye Electronics login page
+            page.goto("https://rms.eyeelectronics.net/login")
+            time.sleep(2)  # Wait for page to load
+
+            # Fill in login form
+            page.fill("input[name='userName']", "noc@stl")
+            page.fill("input[name='password']", "ScomNoC!2#")
+
+            # Click the login button
+            page.click("button[type='submit']")
+
+            # Wait for navigation after login
+            page.wait_for_url("https://rms.eyeelectronics.net/dashboard", timeout=10000)
+
+            st.success("Logged into Eye Electronics successfully.")
+
+            # Navigate to RMS Stations page
+            page.goto("https://rms.eyeelectronics.net/rms-stations")
+            time.sleep(2)  # Wait for page to load
+
+            # Click on "All" stations
+            page.click("h4:has-text('All')")
+
+            # Click the Export button and wait for download
+            with page.expect_download() as download_info:
+                page.click("button:has-text('Export')")
+            download = download_info.value
+            download.save_as(os.path.join(download_dir, "rms_station_report.xlsx"))
+
+            st.success("Eye Electronics XLSX downloaded successfully.")
+
+        except Exception as e:
+            st.error(f"Failed to download Eye Electronics XLSX: {e}")
+
+        # Close browser
+        browser.close()
+        st.info("Automated downloads completed and browser closed.")
 
 # Function to process uploaded files
 def process_files(csv_file, xlsx_file):
@@ -253,8 +226,8 @@ def main():
     st.title("SirenStats - Alarm Data Processing App")
 
     st.markdown("""\
-    **SirenStats** is a Streamlit application that processes alarm data by merging relevant information
-    from Banglalink and Eye Electronics and generates a comprehensive report.
+    **SirenStats** is a Streamlit application that automates the downloading of alarm data from Banglalink and Eye Electronics,
+    processes the data by merging relevant information, and generates a comprehensive report.
     """)
 
     st.header("Automate File Downloads")
@@ -263,7 +236,9 @@ def main():
     """)
 
     if st.button("Download Files Automatically"):
-        automate_download()
+        download_dir = setup_download_directory()
+        automate_download(download_dir)
+        st.success(f"Files downloaded and saved in the `downloads` directory.")
 
     st.header("Upload and Process Files")
     st.markdown("""
