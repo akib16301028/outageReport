@@ -52,7 +52,7 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         
         # Check if login was successful by checking the presence of a logout link or dashboard element
         dashboard_soup = BeautifulSoup(response.text, 'html.parser')
-        if dashboard_soup.find('a', string='Logout') is None:
+        if dashboard_soup.find('a', text='Logout') is None:
             st.error("Login failed. Please check your credentials.")
             return None
         
@@ -67,28 +67,22 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         
         page_soup = BeautifulSoup(page.text, 'html.parser')
         
-        # Use BeautifulSoup to navigate to the button based on its structure
-        try:
-            # Navigate using the HTML structure as per your XPath
-            csv_button = page_soup.select_one("div:nth-of-type(2) > div > div:nth-of-type(5) > div > div > div > div:nth-of-type(2) > div:nth-of-type(1) > div > button > span")
-            if not csv_button:
-                st.error("CSV download button not found.")
-                return None
-            
-            # Extract the parent element that contains the data-url attribute
-            csv_button_parent = csv_button.find_parent('button')
-            if csv_button_parent and 'data-url' in csv_button_parent.attrs:
-                csv_download_url = csv_button_parent['data-url']
-            else:
-                st.error("CSV download URL not found in the button attributes.")
-                return None
-            
-            # Construct full CSV download URL
-            csv_download_url = urljoin(csv_button_page_url, csv_download_url)
-        
-        except Exception as e:
-            st.error(f"Error finding the CSV button: {e}")
+        # Find the CSV download button
+        csv_button = page_soup.find('span', text='CSV')
+        if not csv_button:
+            st.error("CSV download button not found.")
             return None
+        
+        # Extract the parent element that contains the data-url attribute
+        csv_button_parent = csv_button.find_parent()
+        if csv_button_parent and 'data-url' in csv_button_parent.attrs:
+            csv_download_url = csv_button_parent['data-url']
+        else:
+            st.error("CSV download URL not found in the button attributes.")
+            return None
+        
+        # Construct full CSV download URL
+        csv_download_url = urljoin(csv_button_page_url, csv_download_url)
         
         # Download the CSV file
         csv_response = session.get(csv_download_url)
