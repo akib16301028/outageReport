@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import pandas as pd
 from io import BytesIO
+import time  # Import time module for sleep
 
 # Function to perform login and download CSV
 def login_and_download_csv(login_url, csv_button_url, username, password):
@@ -52,13 +53,16 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         
         # Check if login was successful by checking the presence of a logout link or dashboard element
         dashboard_soup = BeautifulSoup(response.text, 'html.parser')
-        if dashboard_soup.find('a', text='Logout') is None:
+        if dashboard_soup.find('a', string='Logout') is None:
             st.error("Login failed. Please check your credentials.")
             return None
         
         st.success("Logged in successfully!")
         
-        # Step 2: Navigate to the page with the CSV download button
+        # Step 2: Wait for 10 seconds to allow the page to load completely
+        time.sleep(10)
+        
+        # Navigate to the page with the CSV download button
         csv_button_page_url = response.url  # Change if needed
         page = session.get(csv_button_page_url)
         if page.status_code != 200:
@@ -74,7 +78,7 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
             return None
         
         # Extract the parent element that contains the data-url attribute
-        csv_button_parent = csv_button.find_parent()
+        csv_button_parent = csv_button.find_parent('button')
         if csv_button_parent and 'data-url' in csv_button_parent.attrs:
             csv_download_url = csv_button_parent['data-url']
         else:
