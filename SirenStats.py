@@ -6,13 +6,13 @@ import pandas as pd
 from io import BytesIO
 import time  # Import time module for sleep
 
-# Function to perform login and download CSV
-def login_and_download_csv(login_url, csv_button_url, username, password):
+# Function to perform login and download CSV from Banglalink
+def login_and_download_csv_banglalink(login_url, csv_button_url, username, password):
     with requests.Session() as session:
         # Step 1: Get the login page to retrieve any hidden form data (e.g., CSRF tokens)
         login_page = session.get(login_url)
         if login_page.status_code != 200:
-            st.error(f"Failed to access login page. Status code: {login_page.status_code}")
+            st.error(f"Failed to access Banglalink login page. Status code: {login_page.status_code}")
             return None
         
         # Parse the login page
@@ -21,16 +21,11 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         # Find the login form
         login_form = soup.find('form')
         if not login_form:
-            st.error("Login form not found on the login page.")
+            st.error("Banglalink login form not found.")
             return None
         
         # Extract form action (URL to submit the form)
         form_action = login_form.get('action')
-        if not form_action:
-            st.error("Login form action not found.")
-            return None
-        
-        # Construct the full login URL
         post_url = urljoin(login_url, form_action)
         
         # Prepare payload with credentials
@@ -48,22 +43,21 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         # Submit the login form
         response = session.post(post_url, data=payload)
         if response.status_code != 200:
-            st.error(f"Login failed. Status code: {response.status_code}")
+            st.error(f"Banglalink login failed. Status code: {response.status_code}")
             return None
         
-        # Check if login was successful by checking the presence of a logout link or dashboard element
-        dashboard_soup = BeautifulSoup(response.text, 'html.parser')
-        if dashboard_soup.find('a', string='Logout') is None:
-            st.error("Login failed. Please check your credentials.")
+        # Check if login was successful by checking the presence of a logout link
+        if 'Logout' not in response.text:
+            st.error("Banglalink login failed. Please check your credentials.")
             return None
         
-        st.success("Logged in successfully!")
+        st.success("Logged into Banglalink successfully!")
         
-        # Step 2: Wait for 10 seconds to allow the page to load completely
-        time.sleep(10)
+        # Step 2: Wait for 2 seconds to allow the page to load completely
+        time.sleep(2)
         
         # Navigate to the page with the CSV download button
-        csv_button_page_url = response.url  # Change if needed
+        csv_button_page_url = response.url
         page = session.get(csv_button_page_url)
         if page.status_code != 200:
             st.error(f"Failed to access the page with CSV button. Status code: {page.status_code}")
@@ -72,9 +66,9 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         page_soup = BeautifulSoup(page.text, 'html.parser')
         
         # Find the CSV download button
-        csv_button = page_soup.find('span', string='CSV')  # Use 'string' instead of 'text'
+        csv_button = page_soup.find('span', string='CSV')
         if not csv_button:
-            st.error("CSV download button not found.")
+            st.error("Banglalink CSV download button not found.")
             return None
         
         # Extract the parent element that contains the data-url attribute
@@ -82,7 +76,7 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         if csv_button_parent and 'data-url' in csv_button_parent.attrs:
             csv_download_url = csv_button_parent['data-url']
         else:
-            st.error("CSV download URL not found in the button attributes.")
+            st.error("Banglalink CSV download URL not found.")
             return None
         
         # Construct full CSV download URL
@@ -91,7 +85,7 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         # Download the CSV file
         csv_response = session.get(csv_download_url)
         if csv_response.status_code != 200:
-            st.error(f"Failed to download CSV. Status code: {csv_response.status_code}")
+            st.error(f"Failed to download Banglalink CSV. Status code: {csv_response.status_code}")
             return None
         
         # Parse CSV content using pandas
@@ -99,12 +93,102 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
             df = pd.read_csv(BytesIO(csv_response.content))
             return df, csv_response.content
         except Exception as e:
-            st.error(f"Failed to parse CSV: {e}")
+            st.error(f"Failed to parse Banglalink CSV: {e}")
+            return None
+
+
+# Function to perform login and download CSV from Eye Electronics
+def login_and_download_csv_eye(login_url, username, password):
+    with requests.Session() as session:
+        # Step 1: Get the login page to retrieve any hidden form data
+        login_page = session.get(login_url)
+        if login_page.status_code != 200:
+            st.error(f"Failed to access Eye Electronics login page. Status code: {login_page.status_code}")
+            return None
+        
+        # Parse the login page
+        soup = BeautifulSoup(login_page.text, 'html.parser')
+        
+        # Find the login form
+        login_form = soup.find('form')
+        if not login_form:
+            st.error("Eye Electronics login form not found.")
+            return None
+        
+        # Extract form action
+        form_action = login_form.get('action')
+        post_url = urljoin(login_url, form_action)
+        
+        # Prepare payload with credentials
+        payload = {}
+        for input_tag in login_form.find_all('input'):
+            name = input_tag.get('name')
+            value = input_tag.get('value', '')
+            if name == 'userName':
+                payload[name] = username
+            elif name == 'password':
+                payload[name] = password
+            else:
+                payload[name] = value  # Include other hidden fields
+        
+        # Submit the login form
+        response = session.post(post_url, data=payload)
+        if response.status_code != 200:
+            st.error(f"Eye Electronics login failed. Status code: {response.status_code}")
+            return None
+        
+        # Check if login was successful
+        if 'Logout' not in response.text:
+            st.error("Eye Electronics login failed. Please check your credentials.")
+            return None
+        
+        st.success("Logged into Eye Electronics successfully!")
+        
+        # Step 2: Wait for 2 seconds to allow the page to load completely
+        time.sleep(2)
+        
+        # Navigate to the page with the "All Stations" and export button
+        # Adjust the CSV button URL according to the structure
+        stations_url = urljoin(login_url, 'path/to/stations')  # Update this path
+        stations_page = session.get(stations_url)
+        if stations_page.status_code != 200:
+            st.error(f"Failed to access the stations page. Status code: {stations_page.status_code}")
+            return None
+        
+        stations_soup = BeautifulSoup(stations_page.text, 'html.parser')
+        
+        # Click on "All" stations
+        all_stations_button = stations_soup.find('div', text='All')
+        if not all_stations_button:
+            st.error("All stations button not found.")
+            return None
+        
+        # Click the export button
+        export_button = stations_soup.find('button', text='Export')
+        if not export_button:
+            st.error("Export button not found.")
+            return None
+        
+        # Get the CSV download URL
+        csv_download_url = export_button['data-url']  # Make sure to adjust this if needed
+        
+        # Download the CSV file
+        csv_response = session.get(csv_download_url)
+        if csv_response.status_code != 200:
+            st.error(f"Failed to download Eye Electronics CSV. Status code: {csv_response.status_code}")
+            return None
+        
+        # Parse CSV content using pandas
+        try:
+            df = pd.read_csv(BytesIO(csv_response.content))
+            return df, csv_response.content
+        except Exception as e:
+            st.error(f"Failed to parse Eye Electronics CSV: {e}")
             return None
 
 # Streamlit Interface
-st.title("Banglalink Portal Automation")
-st.write("This app logs into the Banglalink portal and downloads a CSV file.")
+st.title("Portal Automation")
+st.write("This app logs into the Banglalink and Eye Electronics portals and downloads CSV files.")
 
 # Accessing secrets from Streamlit's secrets management
 try:
@@ -114,20 +198,38 @@ except KeyError:
     st.error("Credentials not found. Please ensure they are set in secrets.toml.")
     st.stop()
 
-if st.button("Login and Download CSV"):
-    login_url = "https://ums.banglalink.net/index.php/site/login"
+if st.button("Login and Download CSV from Banglalink"):
+    login_url_banglalink = "https://ums.banglalink.net/index.php/site/login"
     
-    result = login_and_download_csv(login_url, login_url, username, password)
+    result_banglalink = login_and_download_csv_banglalink(login_url_banglalink, login_url_banglalink, username, password)
     
-    if result:
-        df, csv_content = result
-        st.write("CSV Data:")
-        st.dataframe(df)
+    if result_banglalink:
+        df_banglalink, csv_content_banglalink = result_banglalink
+        st.write("Banglalink CSV Data:")
+        st.dataframe(df_banglalink)
         
         # Provide a download button
         st.download_button(
-            label="Download CSV",
-            data=csv_content,
-            file_name="downloaded_data.csv",
+            label="Download Banglalink CSV",
+            data=csv_content_banglalink,
+            file_name="banglalink_data.csv",
+            mime="text/csv",
+        )
+
+if st.button("Login and Download CSV from Eye Electronics"):
+    login_url_eye = "https://rms.eyeelectronics.net/login"
+    
+    result_eye = login_and_download_csv_eye(login_url_eye, username, password)
+    
+    if result_eye:
+        df_eye, csv_content_eye = result_eye
+        st.write("Eye Electronics CSV Data:")
+        st.dataframe(df_eye)
+        
+        # Provide a download button
+        st.download_button(
+            label="Download Eye Electronics CSV",
+            data=csv_content_eye,
+            file_name="eye_electronics_data.csv",
             mime="text/csv",
         )
