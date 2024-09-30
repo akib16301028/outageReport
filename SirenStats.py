@@ -1,71 +1,150 @@
-import time
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+import pandas as pd
+from io import BytesIO
 
-# Initialize Streamlit app
-st.title("Banglalink Login Automation")
-st.write("This app automates logging into the Banglalink portal and downloads a CSV file.")
-
-# Set up Chrome options for headless execution
-chrome_options = Options()
-chrome_options.add_argument("--headless")
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
-
-# Start a Selenium WebDriver
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-
-# Go to the login page
-login_url = "https://ums.banglalink.net/index.php/site/login"
-driver.get(login_url)
-st.write(f"Accessing {login_url}")
-
-# Define user credentials (you mentioned these)
-username = "r.parves@blmanagedservices.com"
-password = "BLjessore@2024"
-
-# Find the username and password fields and input the credentials
-st.write("Filling in the username and password...")
-
-try:
-    driver.find_element(By.ID, "LoginForm_username").send_keys(username)
-    driver.find_element(By.ID, "LoginForm_password").send_keys(password)
-
-    # Click the login button
-    login_button = driver.find_element(By.CSS_SELECTOR, 'button[type="submit"].btn-primary')
-    login_button.click()
-
-    st.write("Logging in...")
-
-    # Wait for page to load
-    time.sleep(5)
-
-    # Check if login was successful
-    if "dashboard" in driver.current_url:
+# Function to perform login and download CSV
+def login_and_download_csv(login_url, csv_button_url, username, password):
+    with requests.Session() as session:
+        # Step 1: Get the login page to retrieve any hidden form data (e.g., CSRF tokens)
+        login_page = session.get(login_url)
+        if login_page.status_code != 200:
+            st.error(f"Failed to access login page. Status code: {login_page.status_code}")
+            return None
+        
+        # Parse the login page
+        soup = BeautifulSoup(login_page.text, 'html.parser')
+        
+        # Find the login form
+        login_form = soup.find('form')
+        if not login_form:
+            st.error("Login form not found on the login page.")
+            return None
+        
+        # Extract form action (URL to submit the form)
+        form_action = login_form.get('action')
+        if not form_action:
+            st.error("Login form action not found.")
+            return None
+        
+        # Construct the full login URL
+        post_url = urljoin(login_url, form_action)
+        
+        # Prepare payload with credentials
+        payload = {}
+        for input_tag in login_form.find_all('input'):
+            name = input_tag.get('name')
+            value = input_tag.get('value', '')
+            if name == 'LoginForm[username]':
+                payload[name] = username
+            elif name == 'LoginForm[password]':
+                payload[name] = password
+            else:
+                payload[name] = value  # Include other hidden fields like CSRF tokens
+        
+        # Submit the login form
+        response = session.post(post_url, data=payload)
+        if response.status_code != 200:
+            st.error(f"Login failed. Status code: {response.status_code}")
+            return None
+        
+        # Check if login was successful by checking the presence of a logout link or dashboard element
+        dashboard_soup = BeautifulSoup(response.text, 'html.parser')
+        if dashboard_soup.find('a', text='Logout') is None:
+            st.error("Login failed. Please check your credentials.")
+            return None
+        
         st.success("Logged in successfully!")
+        
+        # Step 2: Navigate to the page with the CSV download button
+        # Assuming the CSV button is on the dashboard or a specific page
+        # If it's on a different page, adjust the URL accordingly
+        # For demonstration, let's assume it's on the same page after login
+        # If it's on a different page, set csv_button_page_url accordingly
+        csv_button_page_url = response.url  # Change if needed
+        page = session.get(csv_button_page_url)
+        if page.status_code != 200:
+            st.error(f"Failed to access the page with CSV button. Status code: {page.status_code}")
+            return None
+        
+        page_soup = BeautifulSoup(page.text, 'html.parser')
+        
+        # Find the CSV download button
+        csv_button = page_soup.find('button', {'class': 'dt-button btn btn-default btn-sm btn_csv_export'})
+        if not csv_button:
+            st.error("CSV download button not found.")
+            return None
+        
+        # Sometimes buttons trigger JavaScript; check if there's a direct link
+        # If the button has a data attribute or an onclick with the URL, extract it
+        # Otherwise, it might require JavaScript to execute, which `requests` can't handle
+        
+        # Example: if there's a data-url attribute
+        csv_download_url = csv_button.get('data-url')
+        if not csv_download_url:
+            # Alternatively, check if it's within a form or has a specific onclick
+            # This part might need to be adjusted based on actual HTML structure
+            st.error("CSV download URL not found in the button attributes.")
+            return None
+        
+        # Construct full CSV download URL
+        csv_download_url = urljoin(csv_button_page_url, csv_download_url)
+        
+        # Download the CSV file
+        csv_response = session.get(csv_download_url)
+        if csv_response.status_code != 200:
+            st.error(f"Failed to download CSV. Status code: {csv_response.status_code}")
+            return None
+        
+        # Optionally, parse CSV content using pandas
+        try:
+            df = pd.read_csv(BytesIO(csv_response.content))
+            return df, csv_response.content
+        except Exception as e:
+            st.error(f"Failed to parse CSV: {e}")
+            return None
 
-        # Now navigate to the page where the CSV button is located
-        st.write("Navigating to the page with the CSV download button...")
+# Streamlit Interface
+st.title("Banglalink Portal Automation")
+st.write("This app logs into the Banglalink portal and downloads a CSV file.")
 
-        # Wait for the button to appear and then click it
-        csv_button = driver.find_element(By.CSS_SELECTOR, 'button.btn_csv_export')
-        csv_button.click()
+# **Security Best Practice:** Use Streamlit's secrets management for credentials
+# For demonstration, we'll use Streamlit's `st.secrets`
+# You need to add your credentials to the `.streamlit/secrets.toml` file like this:
+# [credentials]
+# username = "your_username"
+# password = "your_password"
 
-        st.write("CSV download initiated!")
+# Example:
+# credentials.username = "r.parves@blmanagedservices.com"
+# credentials.password = "BLjessore@2024"
 
-        # Wait for the download to complete
-        time.sleep(5)
+# Ensure you have the secrets set up before running the app
+try:
+    username = st.secrets["credentials"]["username"]
+    password = st.secrets["credentials"]["password"]
+except:
+    st.error("Please set up your credentials in Streamlit's secrets.")
+    st.stop()
 
-    else:
-        st.error("Login failed. Please check your credentials.")
-except Exception as e:
-    st.error(f"An error occurred: {e}")
-
-# Close the browser session
-driver.quit()
-
-st.write("Automation task completed.")
+if st.button("Login and Download CSV"):
+    login_url = "https://ums.banglalink.net/index.php/site/login"
+    # Replace with the actual URL where the CSV button is located if different
+    csv_button_url = "https://ums.banglalink.net/index.php/site/login"  # Adjust as needed
+    
+    result = login_and_download_csv(login_url, csv_button_url, username, password)
+    
+    if result:
+        df, csv_content = result
+        st.write("CSV Data:")
+        st.dataframe(df)
+        
+        # Provide a download button
+        st.download_button(
+            label="Download CSV",
+            data=csv_content,
+            file_name="downloaded_data.csv",
+            mime="text/csv",
+        )
