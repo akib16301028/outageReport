@@ -72,7 +72,7 @@ def login_and_download_csv(login_url, csv_button_url, username, password):
         page_soup = BeautifulSoup(page.text, 'html.parser')
         
         # Find the CSV download button
-        csv_button = page_soup.find('span', text='CSV')
+        csv_button = page_soup.find('span', string='CSV')  # Use 'string' instead of 'text'
         if not csv_button:
             st.error("CSV download button not found.")
             return None
