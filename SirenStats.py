@@ -1,103 +1,79 @@
-import time
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import pandas as pd
 from io import BytesIO
 
-# Function to perform login and download CSV
-def login_and_download_csv(username, password):
+# Function to perform login and download CSV using Playwright
+def login_and_download_csv_playwright(username, password):
     try:
-        # Set up Chrome options for headless execution
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")  # Run in headless mode
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])  # Suppress logs
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
 
-        # Initialize WebDriver
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+            # Go to the login page
+            login_url = "https://ums.banglalink.net/index.php/site/login"
+            page.goto(login_url)
+            st.write(f"Accessing {login_url}")
 
-        # Define wait
-        wait = WebDriverWait(driver, 20)  # 20 seconds timeout
+            # Fill in the username and password
+            st.write("Filling in the username and password...")
+            page.fill('input#LoginForm_username', username)
+            page.fill('input#LoginForm_password', password)
 
-        # Go to the login page
-        login_url = "https://ums.banglalink.net/index.php/site/login"
-        driver.get(login_url)
-        st.write(f"Accessing {login_url}")
+            # Click the login button
+            st.write("Clicking the login button...")
+            page.click('button[type="submit"].btn-primary')
 
-        # Wait for the username field to be present
-        wait.until(EC.presence_of_element_located((By.ID, "LoginForm_username")))
+            # Wait for navigation after login
+            st.write("Waiting for login to complete...")
+            try:
+                # Wait for a specific element that appears after login
+                page.wait_for_selector('.some-dashboard-class', timeout=20000)  # Adjust selector as needed
+                st.success("Logged in successfully!")
+            except PlaywrightTimeoutError:
+                st.warning("Login may have failed or dashboard element not found. Proceeding to locate CSV button.")
 
-        # Input username and password
-        st.write("Filling in the username and password...")
-        driver.find_element(By.ID, "LoginForm_username").send_keys(username)
-        driver.find_element(By.ID, "LoginForm_password").send_keys(password)
+            # Additional sleep to ensure the page is fully loaded
+            page.wait_for_timeout(5000)  # 5 seconds
 
-        # Click the login button
-        st.write("Clicking the login button...")
-        login_button = driver.find_element(By.CSS_SELECTOR, 'button[type="submit"].btn-primary')
-        login_button.click()
+            # Locate and click the CSV download button
+            st.write("Locating the CSV download button...")
+            try:
+                # Wait until the CSV button is visible and clickable
+                page.wait_for_selector('button.dt-button.btn.btn-default.btn-sm.btn_csv_export', timeout=10000)
+                page.click('button.dt-button.btn.btn-default.btn-sm.btn_csv_export')
+                st.success("CSV download initiated!")
+            except PlaywrightTimeoutError:
+                st.error("CSV download button not found or not clickable.")
+                browser.close()
+                return None
 
-        # Wait for the dashboard or a specific element that signifies a successful login
-        st.write("Waiting for login to complete...")
-        try:
-            # Adjust the expected condition based on the post-login page
-            wait.until(EC.presence_of_element_located((By.CLASS_NAME, "some-dashboard-class")))
-            st.success("Logged in successfully!")
-        except TimeoutException:
-            # If specific element not found, proceed to try locating the CSV button
-            st.warning("Login may have failed or dashboard element not found. Proceeding to locate CSV button.")
+            # Wait for the download to complete
+            st.write("Waiting for the CSV file to download...")
+            try:
+                with page.expect_download() as download_info:
+                    page.click('button.dt-button.btn.btn-default.btn-sm.btn_csv_export')
+                download = download_info.value
+                csv_path = download.path()
+                csv_content = download.body()
+                st.success("CSV file downloaded successfully!")
+            except PlaywrightTimeoutError:
+                st.error("CSV download timed out.")
+                browser.close()
+                return None
 
-        # Alternatively, wait for the URL to change or another condition
-        time.sleep(5)  # Additional sleep to ensure the page is fully loaded
+            # Close the browser
+            browser.close()
 
-        # Attempt to find the CSV download button
-        st.write("Locating the CSV download button...")
-        try:
-            # Wait until the CSV button is clickable
-            wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button.dt-button.btn.btn-default.btn-sm.btn_csv_export')))
-            csv_button = driver.find_element(By.CSS_SELECTOR, 'button.dt-button.btn.btn-default.btn-sm.btn_csv_export')
-            csv_button.click()
-            st.success("CSV download initiated!")
-        except TimeoutException:
-            st.error("CSV download button not found or not clickable.")
-            driver.quit()
-            return None
-
-        # Wait for the download to complete
-        st.write("Waiting for the CSV file to download...")
-        time.sleep(5)  # Adjust based on download time
-
-        # Assuming the CSV is downloaded to a specific directory, fetch it
-        # Since Selenium cannot directly fetch the downloaded file in headless mode,
-        # you might need to set the download directory and read the file.
-        # Alternatively, if the download triggers a direct response, capture it.
-
-        # For demonstration, let's assume the CSV is returned as a response or accessible via a link.
-        # Implementing this requires more details about the download mechanism.
-
-        # Placeholder for CSV content
-        csv_content = b""  # Replace with actual content if accessible
-
-        # Close the browser
-        driver.quit()
-
-        # Return CSV content
-        return csv_content
+            return csv_content
 
     except Exception as e:
         st.error(f"An error occurred during automation: {e}")
         return None
 
 # Streamlit Interface
-st.title("Banglalink Portal Automation")
+st.title("Banglalink Portal Automation with Playwright")
 st.write("This app logs into the Banglalink portal and attempts to download a CSV file.")
 
 # **Security Best Practice:** Use Streamlit's secrets management for credentials
@@ -110,9 +86,9 @@ except KeyError:
 
 if st.button("Login and Download CSV"):
     with st.spinner("Automating login and CSV download..."):
-        csv_data = login_and_download_csv(username, password)
+        csv_data = login_and_download_csv_playwright(username, password)
         if csv_data:
-            # Assuming you have the CSV content, you can create a DataFrame
+            # Create a DataFrame from CSV content
             try:
                 df = pd.read_csv(BytesIO(csv_data))
                 st.write("CSV Data:")
