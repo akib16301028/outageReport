@@ -48,7 +48,7 @@ def perform_login(username: str, password: str):
             
             # Wait for navigation or a specific element that signifies successful login
             try:
-                # Replace the selector below with an actual selector that appears after successful login
+                # Adjust the selector based on the post-login page
                 page.wait_for_selector("selector_for_dashboard_or_unique_element", timeout=15000)
                 login_successful = True
                 message = "Login successful!"
@@ -74,14 +74,10 @@ def main():
     # Retrieve credentials from Streamlit Secrets or allow user input
     # It's highly recommended to use Streamlit's Secrets Management for sensitive data
     # For demonstration, default values are provided
-    username = st.text_input("Username", value=st.secrets["credentials"]["username"] if "credentials" in st.secrets else "")
-    password = st.text_input("Password", type="password", value=st.secrets["credentials"]["password"] if "credentials" in st.secrets else "")
+    username = st.text_input("Username", value="r.parves@blmanagedservices.com")
+    password = st.text_input("Password", type="password", value="BLjessore@2024")
     
     if st.button("Login"):
-        if not username or not password:
-            st.error("Please provide both username and password.")
-            return
-        
         # Install Playwright browsers if not already installed
         install_playwright_browsers()
         
