@@ -1,5 +1,6 @@
 import streamlit as st
 from playwright.sync_api import sync_playwright
+import os
 
 # Streamlit app title
 st.title("Automate Login to Banglalink UMS")
@@ -26,7 +27,7 @@ def automate_login(username, password):
             # Click the login button
             page.click('button[type="submit"]')
 
-            # Wait for the navigation after login (adjust the selector if necessary)
+            # Wait for the navigation after login
             page.wait_for_load_state('networkidle')
 
             # Navigate to the main page after login
@@ -47,4 +48,9 @@ def automate_login(username, password):
 if st.button("Login"):
     result = automate_login(username, password)
     st.write(result)
-    st.image("login_success.png")
+
+    # Check if the image exists before displaying
+    if os.path.exists("login_success.png"):
+        st.image("login_success.png")
+    else:
+        st.warning("No screenshot available.")
