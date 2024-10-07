@@ -25,7 +25,7 @@ def automate_login(username, password):
         # Click the login button
         page.click('button[type="submit"]')
 
-        # Optionally, wait for the next page to load (you can adjust the timeout or conditions)
+        # Wait for the navigation after login (adjust the selector if necessary)
         page.wait_for_load_state('networkidle')
 
         # Screenshot for confirmation
@@ -34,7 +34,7 @@ def automate_login(username, password):
         # Close the browser
         browser.close()
 
-        return "Login attempt complete. Check the browser for result."
+        return "Login attempt complete. Check the browser for the result."
 
 # Streamlit button to trigger the login function
 if st.button("Login"):
