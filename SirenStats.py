@@ -1,145 +1,153 @@
+import requests
+from bs4 import BeautifulSoup
+import datetime
 import streamlit as st
-import pandas as pd
-import sqlite3
-import io
-import os
-import shutil
 
-# Function to process uploaded files
-def process_files(csv_file, xlsx_file):
-    try:
-        # Read the CSV file
-        csv_data = pd.read_csv(csv_file)
-        st.success("CSV file uploaded and read successfully!")
+st.set_page_config(page_title="STL end Pending Tickets", page_icon="🗼")
 
-        # Read the XLSX file with header in row 3 (zero-based index 2)
-        xlsx_data = pd.read_excel(xlsx_file, header=2)
-        st.success("XLSX file uploaded and read successfully!")
+st.title("STL end Pending Tickets")
 
-        # Display columns for debugging
-        st.subheader("CSV File Columns")
-        st.write(csv_data.columns.tolist())
+# Define the scraping function
+def scrape_page(session, page_url, all_tickets):
+    # Access the page with the table using the session
+    response = session.get(page_url)
 
-        st.subheader("XLSX File Columns")
-        st.write(xlsx_data.columns.tolist())
+    # Check if the access was successful
+    if response.status_code == 200:
+        # Parse the HTML content of the page
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Validate required columns in CSV
-        required_csv_columns = ["Alarm Raised Date", "Alarm Raised Time", "Site", "Alarm Slogan", "Service Type", "Mini-Hub", "Power Status"]
-        missing_csv_columns = [col for col in required_csv_columns if col not in csv_data.columns]
-        if missing_csv_columns:
-            st.error(f"CSV file is missing one or more required columns: {missing_csv_columns}")
-            st.stop()
+        # Find the table with id "ticket_table_view"
+        table = soup.find('table', {'id': 'ticket_table_view'})
 
-        # Validate required columns in XLSX
-        required_xlsx_columns = ["Site Alias", "Zone", "Cluster"]
-        missing_xlsx_columns = [col for col in required_xlsx_columns if col not in xlsx_data.columns]
-        if missing_xlsx_columns:
-            st.error(f"XLSX file is missing one or more required columns: {missing_xlsx_columns}")
-            st.stop()
+        # Check if the table is found
+        if table:
+            # Iterate through each row in the table
+            for row in table.find_all('tr', {'id': 'myDiv'}):
+                # Extract data from each cell in the row
+                cells = row.find_all('td')
 
-        # Extract and clean relevant columns from CSV
-        bl_df = csv_data[required_csv_columns].copy()
-        bl_df['Site_Clean'] = (
-            bl_df['Site']
-            .str.replace('_X', '', regex=False)  # Remove '_X'
-            .str.split(' ').str[0]               # Remove anything after space
-            .str.split('(').str[0]               # Remove anything after '('
-            .str.strip()                          # Trim whitespace
-        )
+                # Append the relevant data to the list (modify as needed)
+                if cells:
+                    ticket_id = cells[0].text.strip()
+                    problem_name = cells[3].text.strip()
 
-        # Extract and clean relevant columns from XLSX
-        ee_df = xlsx_data[required_xlsx_columns].copy()
-        ee_df['Site_Alias_Clean'] = (
-            ee_df['Site Alias']
-            .str.replace(r'\s*\(.*\)', '', regex=True)  # Remove anything after space and '('
-            .str.strip()
-        )
+                    # Append the ticket ID to the global list
+                    all_tickets.append({"Ticket ID": ticket_id, "Problem Category": problem_name})
 
-        # Display cleaned columns for debugging
-        st.subheader("Cleaned CSV 'Site' Column")
-        st.write(bl_df['Site_Clean'].head())
-
-        st.subheader("Cleaned XLSX 'Site Alias' Column")
-        st.write(ee_df['Site_Alias_Clean'].head())
-
-        # Merge dataframes on cleaned Site columns
-        merged_df = pd.merge(
-            bl_df, 
-            ee_df[['Site_Alias_Clean', 'Site Alias', 'Zone', 'Cluster']], 
-            left_on='Site_Clean', 
-            right_on='Site_Alias_Clean', 
-            how='left'
-        )
-
-        # Check for unmatched sites
-        unmatched = merged_df[merged_df['Zone'].isna()]
-        if not unmatched.empty:
-            st.warning("Some sites did not match and have NaN for Zone and Cluster.")
-            st.write(unmatched[['Site', 'Site_Clean']])
-
-        # Select and rename columns as needed
-        final_df = merged_df[[
-            "Alarm Raised Date",
-            "Alarm Raised Time",
-            "Site",
-            "Alarm Slogan",
-            "Service Type",
-            "Mini-Hub",
-            "Power Status",
-            "Site Alias",  # Include 'Site Alias' from XLSX
-            "Zone",
-            "Cluster"
-        ]].copy()
-
-        # Display the first few rows for verification
-        st.header("Preview of Merged Data")
-        st.dataframe(final_df.head())
-
-        # Optionally, save to SQLite database (in-memory)
-        conn = sqlite3.connect(":memory:")
-        final_df.to_sql('alarms', conn, if_exists='replace', index=False)
-        conn.close()
-
-        # Provide download link for the final report
-        st.header("Download Final Report")
-        towrite = io.BytesIO()
-        final_df.to_excel(towrite, index=False, engine='openpyxl')
-        towrite.seek(0)
-        st.download_button(
-            label="📥 Download Final Report as Excel",
-            data=towrite,
-            file_name="final_report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        st.success("Data processed and report generated successfully!")
-
-    except Exception as e:
-        st.error(f"An error occurred while processing the files: {e}")
-
-# Streamlit app starts here
-def main():
-    st.title("SirenStats - Alarm Data Processing App")
-    
-    st.markdown("""
-    **SirenStats** is a Streamlit application that processes alarm data by merging relevant information
-    from Banglalink and Eye Electronics and generates a comprehensive report.
-    """)
-
-    st.header("Upload and Process Files")
-    st.markdown("""
-    Manually upload the CSV and XLSX files to process and generate the final report.
-    """)
-
-    # File upload section
-    csv_file = st.file_uploader("Upload CSV file from Banglalink Alarms", type=["csv"])
-    xlsx_file = st.file_uploader("Upload XLSX file from Eye Electronics", type=["xlsx"])
-
-    if st.button("Process Uploaded Files"):
-        if csv_file and xlsx_file:
-            process_files(csv_file, xlsx_file)
         else:
-            st.error("Please upload both CSV and XLSX files before processing.")
+            st.error("Table with id 'ticket_table_view' not found.")
 
-if __name__ == "__main__":
+    else:
+        st.error(f"Failed to access the data page. Status code: {response.status_code}")
+
+# Define a function to format the data and send a Telegram notification
+def format_data(all_tickets):
+    # Get the current date and time
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Initialize an empty message
+    output_message = f"\n\nSTL end Pending Tickets: ({current_time})\n\n"
+
+    output_message += f"<b>DCDB-01 Primary Disconnect:</b>\n\n"
+    DCDB_tickets = [ticket['Ticket ID'] for ticket in all_tickets if any(keyword in ticket['Problem Category'].lower() for keyword in ['dcdb'])]
+    output_message += ", ".join(DCDB_tickets) + "\n\n"
+
+    output_message += "======================================================\n\n"
+
+
+    output_message += f"<b>Smoke:</b>\n\n"
+    smoke_tickets = [ticket['Ticket ID'] for ticket in all_tickets if any(keyword in ticket['Problem Category'].lower() for keyword in ['smoke'])]
+    output_message += ", ".join(smoke_tickets) + "\n\n"
+
+    output_message += "======================================================\n\n"
+
+
+    output_message += f"<b>Door Open:</b>\n\n"
+    door_tickets = [ticket['Ticket ID'] for ticket in all_tickets if any(keyword in ticket['Problem Category'].lower() for keyword in ['door'])]
+    output_message += ", ".join(door_tickets) + "\n\n"
+
+    output_message += "======================================================\n\n"
+
+    output_message += "<b>Others:</b>\n\n"
+    other_tickets = [ticket['Ticket ID'] for ticket in all_tickets if all(keyword not in ticket['Problem Category'].lower() for keyword in ['dcdb', 'smoke', 'door'])]
+    output_message += ", ".join(other_tickets) + "\n\n"
+
+    return output_message
+
+# Define the main function
+def main():
+    # Create a session to maintain cookies
+    session = requests.Session()
+
+    # Define the login URL
+    login_url = "http://172.20.17.50/phoenix/public/authenticate"
+
+    # Prepare the login data
+    login_data = {
+        "username": "sadaf.mahmud",
+        "password": "sadaf123",
+    }
+
+    # Perform the login POST request and store the session cookies
+    response = session.post(login_url, data=login_data)
+
+    # Check if the login was successful
+    if response.status_code == 200:
+        st.success("Login successful.")
+
+        # Define the base URL to fetch the data from
+        base_data_url = "http://172.20.17.50/phoenix/public/ViewTT?company=STL&ticket_id=&ticket_title=&dashboard_value=pending_task&ticket_status=not_closed&assigned_dept=&assigned_subcenter=&assigned_dept=&problem_category=&Search=Search"
+
+        # Create a list to store all tickets
+        all_tickets = []
+
+        # Display a "Run" button
+        if st.button("Run"):
+            # Access the page with the table using the session
+            response = session.get(base_data_url)
+
+            # Parse the HTML content of the page
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Find the pagination links
+            pagination_links = soup.select('.pagination li a')
+
+            # Check if pagination_links is not empty
+            if pagination_links:
+                # Extract the number of pages
+                num_pages = max([int(link.text) for link in pagination_links if link.text.isdigit()])
+            else:
+                # If pagination_links is empty, set num_pages to 1
+                num_pages = 1
+
+            # Iterate through all pages
+            for page_num in range(1, num_pages + 1):
+                page_url = f"{base_data_url}&page={page_num}"
+                st.write(f"Scraping data from page {page_num}")
+                scrape_page(session, page_url, all_tickets)
+
+            # Organize and display the accumulated data
+            formatted_data = format_data(all_tickets)
+            st.title("NOC End Pending Tickets")
+            st.markdown(formatted_data, unsafe_allow_html=True)
+
+        else:
+            st.write("Click the 'Run' button to start the operation.")
+
+    else:
+        st.error("Login failed.")
+
+# Run the Streamlit app
+if __name__ == '__main__':
     main()
+
+# Hide Streamlit style
+hide_st_style = """
+<style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+</style>
+"""
+st.markdown(hide_st_style, unsafe_allow_html=True)
