@@ -1,73 +1,97 @@
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-import time
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+import os
+
+def install_playwright_browsers():
+    """
+    Install Playwright browsers if not already installed.
+    This function runs only once to install the necessary browser binaries.
+    """
+    if not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
+        st.info("Installing Playwright browsers. This may take a few minutes...")
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            p.install()
+        st.success("Playwright browsers installed successfully.")
+
+def perform_login(username: str, password: str):
+    """
+    Uses Playwright to automate logging into the specified website.
+    
+    Args:
+        username (str): The username/email for login.
+        password (str): The corresponding password.
+        
+    Returns:
+        bool: True if login is successful, False otherwise.
+        str: Additional message or error details.
+    """
+    try:
+        with sync_playwright() as p:
+            # Launch the browser in headless mode
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
+            
+            # Navigate to the login page
+            page.goto("https://ums.banglalink.net/index.php/site/login", timeout=60000)
+            
+            # Wait for the username field to be visible
+            page.wait_for_selector("#LoginForm_username", timeout=10000)
+            
+            # Fill in the username and password
+            page.fill("#LoginForm_username", username)
+            page.fill("#LoginForm_password", password)
+            
+            # Click the login button
+            page.click("button.btn.btn-primary.block.full-width.m-b")
+            
+            # Wait for navigation or a specific element that signifies successful login
+            try:
+                # Replace the selector below with an actual selector that appears after successful login
+                page.wait_for_selector("selector_for_dashboard_or_unique_element", timeout=15000)
+                login_successful = True
+                message = "Login successful!"
+            except PlaywrightTimeoutError:
+                # If the specific element isn't found, assume login failed
+                login_successful = False
+                message = "Login failed. Please check your credentials or the website status."
+            
+            # Close the browser
+            browser.close()
+            
+            return login_successful, message
+
+    except Exception as e:
+        return False, f"An error occurred during the login process: {str(e)}"
 
 def main():
-    st.title('Automated Website Login using Selenium')
-    st.write("This app demonstrates how to log in to a website using Selenium with Streamlit.")
-
-    # Securely retrieve credentials (recommended)
-    # It's better to use Streamlit's secrets management instead of hardcoding
-    # For demonstration, we'll use hardcoded values as per your original request
-    username = st.text_input("Username", value="r.parves@blmanagedservices.com")
-    password = st.text_input("Password", type="password", value="BLjessore@2024")
-
-    if st.button('Login'):
-        try:
-            st.info("Initializing browser...")
-
-            # Set up headless Chrome options
-            chrome_options = Options()
-            chrome_options.add_argument("--headless")  # Run in headless mode
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-
-            # Initialize WebDriver with webdriver-manager to handle driver installation
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-
-            st.success("Browser initialized successfully.")
-
-            # Navigate to the login page
-            st.info("Navigating to the login page...")
-            driver.get('https://ums.banglalink.net/index.php/site/login')
-
-            # Wait for the username field to be present
-            wait = WebDriverWait(driver, 10)
-            username_field = wait.until(EC.presence_of_element_located((By.ID, "LoginForm_username")))
-            password_field = wait.until(EC.presence_of_element_located((By.ID, "LoginForm_password")))
-
-            # Input credentials
-            st.info("Entering credentials...")
-            username_field.send_keys(username)
-            password_field.send_keys(password)
-
-            # Click the login button
-            st.info("Attempting to log in...")
-            login_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn.btn-primary.block.full-width.m-b")))
-            login_button.click()
-
-            # Allow time for login to process
-            time.sleep(5)
-
-            # Verify login by checking the page title or a specific element
-            if "dashboard" in driver.title.lower():
-                st.success("Login successful!")
-            else:
-                st.error("Login failed. Please check your credentials or the website status.")
-
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-
-        finally:
-            # Ensure the browser is closed regardless of success or failure
-            driver.quit()
-            st.info("Browser closed.")
+    st.title("Automated Website Login using Playwright")
+    st.write("This app automates logging into [Banglalink UM](https://ums.banglalink.net/index.php/site/login) using Playwright.")
+    
+    st.header("Login Credentials")
+    
+    # Retrieve credentials from Streamlit Secrets or allow user input
+    # It's highly recommended to use Streamlit's Secrets Management for sensitive data
+    # For demonstration, default values are provided
+    username = st.text_input("Username", value=st.secrets["credentials"]["username"] if "credentials" in st.secrets else "")
+    password = st.text_input("Password", type="password", value=st.secrets["credentials"]["password"] if "credentials" in st.secrets else "")
+    
+    if st.button("Login"):
+        if not username or not password:
+            st.error("Please provide both username and password.")
+            return
+        
+        # Install Playwright browsers if not already installed
+        install_playwright_browsers()
+        
+        with st.spinner("Attempting to log in..."):
+            success, msg = perform_login(username, password)
+        
+        if success:
+            st.success(msg)
+        else:
+            st.error(msg)
 
 if __name__ == "__main__":
     main()
