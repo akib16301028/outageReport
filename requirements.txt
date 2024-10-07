@@ -1,2 +1,2 @@
-streamlit==1.25.0
-playwright==1.35.0
+streamlit
+playwright
