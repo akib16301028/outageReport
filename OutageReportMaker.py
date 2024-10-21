@@ -4,7 +4,7 @@ import numpy as np
 import io
 
 # Step 1: Upload file
-st.title("Outage Data Analysis App")
+st.title("Outage Data Analysis")
 uploaded_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
 # Step 2: Date input with a calendar, initially disabled until file is uploaded
