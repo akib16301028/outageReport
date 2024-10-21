@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# Step 1: Ask for the outage report date
-report_date = st.text_input("Outage Report for the Date?", value="YYYY-MM-DD")
-
-# Step 2: Upload file
+# Step 1: Upload file
 st.title("Outage Data Analysis App")
 uploaded_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
+# Step 2: Ask for the outage report date, after the file is uploaded
 if uploaded_file:
+    report_date = st.text_input("Outage Report for the Date?", value="YYYY-MM-DD")
+
     # Step 3: Load the Excel file and specific sheet with header at row 3 (index 2)
     xl = pd.ExcelFile(uploaded_file)
     if 'RMS Alarm Elapsed Report' in xl.sheet_names:
@@ -68,19 +68,17 @@ if uploaded_file:
                 report = generate_report(client_df)
                 reports[client] = report
 
-            # Step 8: Add filtering option at the top
-            selected_client = st.selectbox("Select a client to filter", options=clients)
+            # Step 8: Client Filter panel
+            selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
 
-            if selected_client:
-                st.write(f"### **SC wise {selected_client} Site Outage Status on {report_date}** *(_as per RMS_)**")
-                
-                report = reports[selected_client]
+            # Step 9: Display either all tables or filtered table based on selection
+            def display_table(client_name, report):
+                st.write(f"### **SC wise {client_name} Site Outage Status on {report_date}** *(_as per RMS_)**")
 
-                # Step 9: Display the table with merged Region cells
                 def merge_region_cells(report):
-                    # We will use pandas' style to format the table and merge cells for the same Region
+                    # Format the table to merge Region (Cluster) cells
                     report_style = report.style.set_properties(subset=['Region'], **{'text-align': 'center'}) \
-                                                .format({'Duration (hours)': "{:.2f}"})
+                                               .format({'Duration (hours)': "{:.2f}"})
 
                     # Hide duplicate Region names (simulate merged cells effect)
                     report['Region'] = report['Region'].mask(report['Region'].duplicated(), '')
@@ -89,8 +87,17 @@ if uploaded_file:
 
                 merged_report, styled_report = merge_region_cells(report)
 
-                # Display the merged and formatted table
-                st.table(merged_report)
+                # Display the formatted table
+                st.dataframe(merged_report)
+
+            if selected_client == clients[0]:
+                st.write(f"Showing all clients' reports:")
+                for client in clients:
+                    report = reports[client]
+                    display_table(client, report)
+            else:
+                report = reports[selected_client]
+                display_table(selected_client, report)
 
             # Step 10: Add download option for the final report
             def to_excel():
