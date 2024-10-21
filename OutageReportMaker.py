@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import io
 
 # Step 1: Upload file
 st.title("Outage Data Analysis App")
@@ -95,6 +96,8 @@ if uploaded_file:
                     # Show the table with formatted data
                     st.table(report)
 
+                    return report  # Return the report for downloading
+
                 # Display either all tables or the filtered table based on selection
                 if selected_client == 'All':
                     for client in df['Client'].unique():
@@ -104,19 +107,27 @@ if uploaded_file:
                     report = reports[selected_client]
                     display_table(selected_client, report)
 
-                # Download button for the final report
+                # Function to convert DataFrame to Excel file
                 def to_excel():
-                    with pd.ExcelWriter("outage_report.xlsx", engine='xlsxwriter') as writer:
+                    # Create a BytesIO buffer for the Excel file
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                         # Write original data to the first sheet
                         df.to_excel(writer, sheet_name='Original Data', index=False)
 
                         # Write outage report to a new sheet
                         for client, report in reports.items():
                             report.to_excel(writer, sheet_name=f'{client} Report', index=False)
+                    output.seek(0)
+                    return output
 
+                # Prepare the download button for the final report
                 if st.button("Download Report"):
-                    to_excel()
+                    output = to_excel()
+                    file_name = f"SC wise {selected_client} Site Outage Status on {report_date}.xlsx"
+                    st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     st.success("Report generated and ready to download!")
+
             else:
                 st.error("The required 'Site Alias' column is not found.")
 else:
