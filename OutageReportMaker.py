@@ -35,12 +35,16 @@ if uploaded_file:
                 df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
 
                 # Modify the time columns to calculate duration
-                df['Start Time'] = pd.to_datetime(df['Start Time'])
-                df['End Time'] = pd.to_datetime(df['End Time'])
-                df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
+df['Start Time'] = pd.to_datetime(df['Start Time'])
+df['End Time'] = pd.to_datetime(df['End Time'])
+df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
 
-                # Round the Duration to 2 decimal places
-                df['Duration (hours)'] = df['Duration (hours)'].round(2)
+# Round the Duration to 2 decimal places
+df['Duration (hours)'] = df['Duration (hours)'].round(2)
+
+# Ensure that no durations are shown as 0.00, set a minimum display value of 0.01
+df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: max(x, 0.01))
+
 
                 # Function to generate a report for each client
                 def generate_report(client_df):
