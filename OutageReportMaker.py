@@ -39,8 +39,8 @@ if uploaded_file:
                 df['End Time'] = pd.to_datetime(df['End Time'])
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
 
-                # Round the Duration to 2 decimal places
-                df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: max(round(x, 2), 0.01))
+                # Round the Duration to 2 decimal places using proper rounding rules
+                df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
                 # Function to generate a report for each client
                 def generate_report(client_df):
