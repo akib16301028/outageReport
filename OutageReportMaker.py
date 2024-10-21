@@ -1,56 +1,72 @@
 import streamlit as st
-from playwright.sync_api import sync_playwright
-import os
+import pandas as pd
+import numpy as np
 
-# Streamlit app title
-st.title("Automate Login to Banglalink UMS")
+# Step 1: Upload file
+st.title("Outage Data Analysis App")
+uploaded_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
-# Hardcoded credentials (for demonstration only, use environment variables in production)
-username = "r.parves@blmanagedservices.com"
-password = "BLjessore@2024"
+if uploaded_file:
+    # Step 2: Load the Excel file and specific sheet
+    xl = pd.ExcelFile(uploaded_file)
+    if 'RMS Alarm Elapsed Report' in xl.sheet_names:
+        df = xl.parse('RMS Alarm Elapsed Report')
+        
+        st.write("Data loaded successfully.")
+        
+        # Step 3: Extract client from Site Alias column
+        df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
+        df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
+        
+        # Step 4: Modify the time columns to calculate duration
+        df['Start Time'] = pd.to_datetime(df['Start Time'])
+        df['End Time'] = pd.to_datetime(df['End Time'])
+        df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
 
-# Function to automate login
-def automate_login(username, password):
-    try:
-        with sync_playwright() as p:
-            # Launch the browser in headless mode (set headless=False for debugging)
-            browser = p.chromium.launch(headless=True)  # Change to False to see the browser
-            page = browser.new_page()
-
-            # Navigate to the login page
-            page.goto("https://ums.banglalink.net/index.php/site/login")
-
-            # Fill the login form
-            page.fill('input[name="LoginForm[username]"]', username)
-            page.fill('input[name="LoginForm[password]"]', password)
-
-            # Click the login button
-            page.click('button[type="submit"]')
-
-            # Wait for the navigation after login
-            page.wait_for_load_state('networkidle')
-
-            # Navigate to the main page after login
-            page.goto("https://ums.banglalink.net/index.php/site/dashboard")  # Adjust to the correct URL
-
-            # Screenshot of the logged-in page for confirmation
-            page.screenshot(path="login_success.png")
-
-            # Close the browser
-            browser.close()
-
-            return "Login attempt complete. You are now logged in."
-
-    except Exception as e:
-        return f"An error occurred: {str(e)}"
-
-# Automatically log in when the app runs
-if st.button("Login"):
-    result = automate_login(username, password)
-    st.write(result)
-
-    # Check if the image exists before displaying
-    if os.path.exists("login_success.png"):
-        st.image("login_success.png")
-    else:
-        st.warning("No screenshot available.")
+        # Step 5: Aggregate the data
+        def generate_report(client_df):
+            report = client_df.groupby(['Cluster', 'Zone']).agg(
+                Site_Count=('Site Alias', 'nunique'),
+                Duration=('Duration (hours)', 'sum'),
+                Event_Count=('Site Alias', 'count')
+            ).reset_index()
+            return report
+        
+        # Step 6: Generate table for each client
+        clients = df['Client'].unique()
+        reports = {}
+        for client in clients:
+            client_df = df[df['Client'] == client]
+            report = generate_report(client_df)
+            reports[client] = report
+            st.write(f"Report for Client: {client}")
+            st.table(report)
+        
+        # Step 7: Add filtering option
+        selected_client = st.selectbox("Select a client to filter", options=clients)
+        if selected_client:
+            st.write(f"Filtered Report for Client: {selected_client}")
+            st.table(reports[selected_client])
+            
+        # Step 8: Add download option for the final report
+        def to_excel():
+            with pd.ExcelWriter("outage_report.xlsx", engine='xlsxwriter') as writer:
+                # Write original data to the first sheet
+                df.to_excel(writer, sheet_name='Original Data', index=False)
+                
+                # Write outage report to a new sheet
+                for client, report in reports.items():
+                    report.to_excel(writer, sheet_name=f'{client} Report', index=False)
+                    
+                # Add formatting for borders
+                workbook = writer.book
+                worksheet = writer.sheets['Original Data']
+                for col_num, value in enumerate(df.columns.values):
+                    worksheet.write(0, col_num, value)
+        
+        if st.button("Download Report"):
+            to_excel()
+            st.success("Report generated and ready to download!")
+            
+else:
+    st.warning("Please upload a valid Excel file.")
