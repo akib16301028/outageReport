@@ -13,14 +13,11 @@ if uploaded_file:
         # Read the sheet with header at the third row
         df = xl.parse('RMS Alarm Elapsed Report', header=2)
         
-        # Step 3: Check if 'Site Alias' column exists
-        st.write("Column names:", df.columns)
-        
-        if 'Site Alias' in df.columns:
-            # Remove leading/trailing spaces in case column names have spaces
-            df.columns = df.columns.str.strip()
+        # Remove leading/trailing spaces in case column names have spaces
+        df.columns = df.columns.str.strip()
 
-            # Extract client name and site name from 'Site Alias' column
+        if 'Site Alias' in df.columns:
+            # Step 3: Extract client from Site Alias column
             df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
             df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
 
@@ -29,13 +26,25 @@ if uploaded_file:
             df['End Time'] = pd.to_datetime(df['End Time'])
             df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
 
-            # Step 5: Aggregate the data
+            # Round the Duration to 2 decimal places
+            df['Duration (hours)'] = df['Duration (hours)'].round(2)
+
+            # Step 5: Aggregate the data and rename the columns
             def generate_report(client_df):
                 report = client_df.groupby(['Cluster', 'Zone']).agg(
                     Site_Count=('Site Alias', 'nunique'),
                     Duration=('Duration (hours)', 'sum'),
                     Event_Count=('Site Alias', 'count')
                 ).reset_index()
+
+                # Rename columns as per the requirements
+                report = report.rename(columns={
+                    'Cluster': 'Region',
+                    'Site_Count': 'Site Count',
+                    'Event_Count': 'Event Count',
+                    'Duration': 'Duration (hours)'
+                })
+
                 return report
 
             # Step 6: Generate table for each client
@@ -45,16 +54,32 @@ if uploaded_file:
                 client_df = df[df['Client'] == client]
                 report = generate_report(client_df)
                 reports[client] = report
-                st.write(f"Report for Client: {client}")
-                st.table(report)
 
-            # Step 7: Add filtering option
+            # Step 7: Add filtering option at the top
             selected_client = st.selectbox("Select a client to filter", options=clients)
+
             if selected_client:
                 st.write(f"Filtered Report for Client: {selected_client}")
-                st.table(reports[selected_client])
+                report = reports[selected_client]
 
-            # Step 8: Add download option for the final report
+                # Step 8: Display the table with merged Region cells
+                def merge_region_cells(report):
+                    # We will use pandas' style to format the table and merge cells for the same Region
+                    report_style = report.style.set_properties(subset=['Region'], **{'text-align': 'center'}) \
+                                                .format({'Duration (hours)': "{:.2f}"})
+
+                    # Hide duplicate Region names (simulate merged cells effect)
+                    report['Region'] = report['Region'].mask(report['Region'].duplicated(), '')
+
+                    return report, report_style
+
+                merged_report, styled_report = merge_region_cells(report)
+                st.write(merged_report)
+
+                # Display the styled version with the formatting
+                st.dataframe(merged_report)  # Alternatively, you can use st.table()
+
+            # Step 9: Add download option for the final report
             def to_excel():
                 with pd.ExcelWriter("outage_report.xlsx", engine='xlsxwriter') as writer:
                     # Write original data to the first sheet
