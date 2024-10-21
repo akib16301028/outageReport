@@ -40,39 +40,23 @@ if uploaded_file:
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
 
                 # Round the Duration to 2 decimal places
-                df['Duration (hours)'] = df['Duration (hours)'].round(2)
+                df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: max(round(x, 2), 0.01))
 
                 # Function to generate a report for each client
                 def generate_report(client_df):
-    report = client_df.groupby(['Cluster', 'Zone']).agg(
-        Site_Count=('Site Alias', 'nunique'),
-        Duration=('Duration (hours)', 'sum'),
-        Event_Count=('Site Alias', 'count')
-    ).reset_index()
+                    report = client_df.groupby(['Cluster', 'Zone']).agg(
+                        Site_Count=('Site Alias', 'nunique'),
+                        Duration=('Duration (hours)', 'sum'),
+                        Event_Count=('Site Alias', 'count')
+                    ).reset_index()
 
-    # Rename columns as per the requirements
-    report = report.rename(columns={
-        'Cluster': 'Region',
-        'Site_Count': 'Site Count',
-        'Event_Count': 'Event Count',
-        'Duration': 'Duration (hours)'
-    })
-
-    # Calculate total row
-    total_row = pd.DataFrame({
-        'Region': ['Total'],
-        'Zone': [''],
-        'Site Count': [report['Site Count'].sum()],
-        'Duration (hours)': [report['Duration (hours)'].sum()],
-        'Event Count': [report['Event Count'].sum()]
-    })
-    report = pd.concat([report, total_row], ignore_index=True)
-
-    # Create merged effect by replacing duplicate 'Region' names with empty strings
-    report['Region'] = report['Region'].mask(report['Region'].duplicated(), '')
-
-    return report
-
+                    # Rename columns as per the requirements
+                    report = report.rename(columns={
+                        'Cluster': 'Region',
+                        'Site_Count': 'Site Count',
+                        'Event_Count': 'Event Count',
+                        'Duration': 'Duration (hours)'
+                    })
 
                     # Calculate total row
                     total_row = pd.DataFrame({
@@ -83,6 +67,9 @@ if uploaded_file:
                         'Event Count': [report['Event Count'].sum()]
                     })
                     report = pd.concat([report, total_row], ignore_index=True)
+
+                    # Create merged effect by replacing duplicate 'Region' names with empty strings
+                    report['Region'] = report['Region'].mask(report['Region'].duplicated(), '')
 
                     return report
 
