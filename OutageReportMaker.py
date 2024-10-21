@@ -6,14 +6,20 @@ import numpy as np
 st.title("Outage Data Analysis App")
 uploaded_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
-# Step 2: Date input with a calendar
+# Step 2: Date input with a calendar, initially disabled until file is uploaded
 if uploaded_file:
     report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
 
-    # Generate button to show reports only after clicking it
+    # Step 3: Generate button to show reports only after clicking it
+    if 'generate_report' not in st.session_state:
+        st.session_state.generate_report = False
+
     if st.button("Generate Report"):
+        st.session_state.generate_report = True  # Set the flag to indicate report generation
+    
+    if st.session_state.generate_report:  # Only proceed if the button has been clicked
         
-        # Step 3: Load the Excel file and specific sheet with header at row 3 (index 2)
+        # Load the Excel file and specific sheet with header at row 3 (index 2)
         xl = pd.ExcelFile(uploaded_file)
         if 'RMS Alarm Elapsed Report' in xl.sheet_names:
             # Read the sheet with header at the third row
@@ -23,11 +29,11 @@ if uploaded_file:
             df.columns = df.columns.str.strip()
 
             if 'Site Alias' in df.columns:
-                # Step 4: Extract client from Site Alias column
+                # Extract client from Site Alias column
                 df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
                 df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
 
-                # Step 5: Modify the time columns to calculate duration
+                # Modify the time columns to calculate duration
                 df['Start Time'] = pd.to_datetime(df['Start Time'])
                 df['End Time'] = pd.to_datetime(df['End Time'])
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
@@ -35,7 +41,7 @@ if uploaded_file:
                 # Round the Duration to 2 decimal places
                 df['Duration (hours)'] = df['Duration (hours)'].round(2)
 
-                # Step 6: Aggregate the data and rename the columns
+                # Function to generate a report for each client
                 def generate_report(client_df):
                     report = client_df.groupby(['Cluster', 'Zone']).agg(
                         Site_Count=('Site Alias', 'nunique'),
@@ -63,7 +69,7 @@ if uploaded_file:
 
                     return report
 
-                # Step 7: Generate table for each client
+                # Generate a table for each client
                 clients = np.append('All', df['Client'].unique())  # Add 'All' option
                 reports = {}
                 for client in df['Client'].unique():
@@ -71,10 +77,10 @@ if uploaded_file:
                     report = generate_report(client_df)
                     reports[client] = report
 
-                # Step 8: Client Filter panel with 'All' option
+                # Client Filter panel with 'All' option
                 selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
 
-                # Step 9: Display either all tables or filtered table based on selection
+                # Function to display the table for the selected client
                 def display_table(client_name, report):
                     # Smaller and formatted text for the header
                     st.markdown(
@@ -83,9 +89,13 @@ if uploaded_file:
                         unsafe_allow_html=True
                     )
 
-                    # Show table with formatted columns and total row
+                    # Format 'Duration (hours)' to show two decimal places
+                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
+
+                    # Show the table with formatted data
                     st.table(report)
 
+                # Display either all tables or the filtered table based on selection
                 if selected_client == 'All':
                     for client in df['Client'].unique():
                         report = reports[client]
@@ -94,7 +104,7 @@ if uploaded_file:
                     report = reports[selected_client]
                     display_table(selected_client, report)
 
-                # Step 10: Add download option for the final report
+                # Download button for the final report
                 def to_excel():
                     with pd.ExcelWriter("outage_report.xlsx", engine='xlsxwriter') as writer:
                         # Write original data to the first sheet
