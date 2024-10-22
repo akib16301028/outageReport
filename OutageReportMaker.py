@@ -218,6 +218,13 @@ if uploaded_previous_file:
                     aggfunc='sum'
                 ).reset_index()
 
+                # Add total row to sum elapsed time
+                total_row = pd.DataFrame({'Zone': ['Total'], 'Elapsed Time (hours)': [pivot_elapsed_time['Elapsed Time (hours)'].sum()]})
+                pivot_elapsed_time = pd.concat([pivot_elapsed_time, total_row], ignore_index=True)
+
+                # Ensure two decimal places in the output
+                pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
+
                 st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
                 st.table(pivot_elapsed_time)
 
