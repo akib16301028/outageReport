@@ -32,11 +32,48 @@ if uploaded_outage_file:
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
+                # Load the initial Client Count data
+                try:
+                    initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
+                    df_initial = pd.read_excel(initial_file_path, header=2)
+                    df_initial.columns = df_initial.columns.str.strip()
+
+                    # Extract multiple clients from the 'Site Alias' column
+                    df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
+                    df_exploded = df_initial.explode('Clients')
+
+                    # Group by Client, Cluster (as Region), and Zone to count site occurrences
+                    client_report_initial = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
+                except FileNotFoundError:
+                    st.error("Initial file not found in repository.")
+                    client_report_initial = pd.DataFrame()
+
                 clients = np.append('All', df['Client'].unique())
                 reports = {}
                 for client in df['Client'].unique():
                     client_df = df[df['Client'] == client]
-                    report = generate_report(client_df)
+                    # Generate the report based on initial Client Count data
+                    report = client_report_initial[client_report_initial['Clients'] == client].copy()
+                    
+                    # Aggregate data for Site Count, Duration, and Event Count
+                    if not client_df.empty:
+                        temp_report = client_df.groupby(['Cluster', 'Zone']).agg(
+                            Site_Count=('Site Alias', 'nunique'),
+                            Duration=('Duration (hours)', 'sum'),
+                            Event_Count=('Site Alias', 'count')
+                        ).reset_index()
+
+                        report = report.merge(temp_report, how='left', on=['Cluster', 'Zone'], suffixes=('', '_from_outage'))
+                        report['Site_Count'] = report['Site_Count_from_outage'].fillna(0).astype(int)
+                        report['Duration'] = report['Duration'].fillna(0)
+                        report['Event_Count'] = report['Event_Count_from_outage'].fillna(0).astype(int)
+                        report.drop(columns=['Site_Count_from_outage', 'Event_Count_from_outage'], inplace=True)
+
+                    else:
+                        report['Site_Count'] = 0
+                        report['Duration'] = 0
+                        report['Event_Count'] = 0
+
                     reports[client] = report
 
                 selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
@@ -47,7 +84,7 @@ if uploaded_outage_file:
                         f'<i><small>(as per RMS)</small></i></h4>', 
                         unsafe_allow_html=True
                     )
-                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "0.00")
+                    report['Duration'] = report['Duration'].apply(lambda x: f"{x:.2f}")
                     st.table(report)
                     return report
 
@@ -79,10 +116,9 @@ else:
     st.warning("Please upload a valid Outage Excel file.")
 
 # Section 2: RMS Site List Processing with Multiple Clients
-
 st.subheader("Client Site Count from RMS Station Status Report")
 
-# Step 1: Load the initial file from GitHub repository
+# Load the initial file from GitHub repository
 try:
     initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
     df_initial = pd.read_excel(initial_file_path, header=2)
@@ -102,11 +138,6 @@ try:
         # Show the initial processed data
         st.write("Initial Client Site Count Report (from repository)")
         st.table(client_report_initial)
-
-        # Extract unique regions and zones for the outage report
-        unique_regions = client_report_initial['Cluster'].unique()
-        unique_zones = client_report_initial['Zone'].unique()
-
     else:
         st.error("The required 'Site Alias' column is not found in the initial repository file.")
 
@@ -133,10 +164,6 @@ if uploaded_site_list_file:
         # Show the updated data
         st.write("Updated Client Site Count Report")
         st.table(client_report_uploaded)
-
-        # Extract unique regions and zones for the outage report
-        unique_regions = client_report_uploaded['Cluster'].unique()
-        unique_zones = client_report_uploaded['Zone'].unique()
 
         # Function to convert updated report to Excel and download
         def to_excel_updated(df):
