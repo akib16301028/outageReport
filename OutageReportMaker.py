@@ -212,6 +212,10 @@ import streamlit as st
 import pandas as pd
 import io
 
+import streamlit as st
+import pandas as pd
+import io
+
 # Step 3: Upload Previous Outage Data File
 st.subheader("Upload Previous Outage Data")
 
@@ -228,18 +232,13 @@ if uploaded_previous_file:
         # Check if the necessary columns exist
         if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns:
             
-            # Convert Elapsed Time to hours with error handling
+            # Convert Elapsed Time to hours
             def convert_to_hours(elapsed_time):
                 try:
-                    if pd.isna(elapsed_time):
-                        return 0
-                    # Ensure the value is a string before splitting
-                    if isinstance(elapsed_time, str):
-                        time_parts = elapsed_time.split(':')
-                        if len(time_parts) == 3:
-                            h, m, s = map(int, time_parts)
-                            return round(h + m / 60 + s / 3600, 2)
-                    return 0
+                    # Handle time format using pandas Timedelta conversion
+                    total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
+                    hours = total_seconds / 3600  # Convert seconds to hours
+                    return round(hours, 2)
                 except Exception as e:
                     return 0  # Handle any unexpected errors by returning 0 hours
 
