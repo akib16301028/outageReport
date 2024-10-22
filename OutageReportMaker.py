@@ -16,19 +16,16 @@ try:
     if 'Site Alias' in df_default.columns:
         df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
         df_default_exploded = df_default.explode('Clients')
-        regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
     else:
         st.error("The required 'Site Alias' column is not found in the default file.")
-        regions_zones = pd.DataFrame()  # Empty DataFrame to avoid errors
 
 except FileNotFoundError:
     st.error("Default file not found.")
-    regions_zones = pd.DataFrame()  # Empty DataFrame to avoid errors
 
 # Step 2: Upload file for Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
-if uploaded_outage_file and not regions_zones.empty:
+if uploaded_outage_file and 'df_default' in locals():
     report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
 
     if 'generate_report' not in st.session_state:
@@ -51,8 +48,17 @@ if uploaded_outage_file and not regions_zones.empty:
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
-                def generate_report(client_df):
-                    # Create a full report structure with all regions and zones
+                clients = np.append('All', df['Client'].unique())
+                selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
+
+                # If a client is selected, filter regions and zones from the default file
+                if selected_client != 'All':
+                    regions_zones = df_default_exploded[df_default_exploded['Clients'] == selected_client][['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
+                else:
+                    regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
+
+                def generate_report(client_df, regions_zones):
+                    # Create a full report structure with relevant regions and zones
                     full_report = regions_zones.copy()
                     client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
                         Site_Count=('Site Alias', 'nunique'),
@@ -84,14 +90,17 @@ if uploaded_outage_file and not regions_zones.empty:
                     report = pd.concat([report, total_row], ignore_index=True)
                     return report
 
-                clients = np.append('All', df['Client'].unique())
-                reports = {}
-                for client in df['Client'].unique():
-                    client_df = df[df['Client'] == client]
-                    report = generate_report(client_df)
-                    reports[client] = report
+                # Generate report for selected client
+                if selected_client != 'All':
+                    client_df = df[df['Client'] == selected_client]
+                    report = generate_report(client_df, regions_zones)
+                    display_table(selected_client, report)
 
-                selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
+                else:  # For "All", show reports for all clients
+                    for client in df['Client'].unique():
+                        client_df = df[df['Client'] == client]
+                        report = generate_report(client_df, regions_zones)
+                        display_table(client, report)
 
                 def display_table(client_name, report):
                     st.markdown(
@@ -103,19 +112,13 @@ if uploaded_outage_file and not regions_zones.empty:
                     st.table(report)
                     return report
 
-                if selected_client == 'All':
-                    for client in df['Client'].unique():
-                        report = reports[client]
-                        display_table(client, report)
-                else:
-                    report = reports[selected_client]
-                    display_table(selected_client, report)
-
                 def to_excel():
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                         df.to_excel(writer, sheet_name='Original Data', index=False)
-                        for client, report in reports.items():
+                        for client in df['Client'].unique():
+                            client_df = df[df['Client'] == client]
+                            report = generate_report(client_df, regions_zones)
                             report.to_excel(writer, sheet_name=f'{client} Report', index=False)
                     output.seek(0)
                     return output
@@ -138,7 +141,7 @@ else:
 st.subheader("Client Site Count from RMS Station Status Report")
 
 # Load the initial file from GitHub repository
-if not regions_zones.empty:
+if 'df_default' in locals():
     try:
         initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
         df_initial = pd.read_excel(initial_file_path, header=2)
