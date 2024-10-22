@@ -51,26 +51,28 @@ if uploaded_outage_file and not regions_zones.empty:
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
-                def generate_report(client_df, selected_client):
-                    # Extract regions and zones relevant to the selected client
-                    relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
-                    if relevant_zones.empty:
-                        return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
-
-                    relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
-
-                    # Create a full report structure with the relevant regions and zones
-                    full_report = relevant_regions_zones.copy()
+                def generate_report(client_df, client_name):
+                    # Create a full report structure with all regions and zones
+                    full_report = regions_zones.copy()
                     client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
                         Site_Count=('Site Alias', 'nunique'),
                         Duration=('Duration (hours)', 'sum'),
                         Event_Count=('Site Alias', 'count')
                     ).reset_index()
 
+                    # Calculate Total Site Count for the selected client
+                    total_site_count = client_agg['Site_Count'].sum()
+
                     # Merge the client aggregated report with the full report
-                    report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
+                    report = pd.merge(full_report, client_agg, how='left', on=['Cluster', 'Zone'])
                     report = report.fillna(0)  # Fill NaNs with zeros
-                    report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))  # Rounding the duration
+
+                    # Add additional columns
+                    report['Total Site Count'] = total_site_count
+                    report['Total Hours'] = report['Total Site Count'] * 24 * 30
+                    report['Affected Site Count'] = report['Site_Count']
+                    report['Outage Duration'] = report['Duration']
+                    report['Total Allowable Limit (Hour)'] = report['Total Hours'] - (report['Total Hours'] * 0.9985)
 
                     # Rename columns
                     report = report.rename(columns={
@@ -84,9 +86,12 @@ if uploaded_outage_file and not regions_zones.empty:
                     total_row = pd.DataFrame({
                         'Region': ['Total'],
                         'Zone': [''],
-                        'Site Count': [report['Site Count'].sum()],
-                        'Duration (hours)': [report['Duration (hours)'].sum()],
-                        'Event Count': [report['Event Count'].sum()]
+                        'Total Site Count': [report['Total Site Count'].sum()],
+                        'Total Hours': [report['Total Hours'].sum()],
+                        'Affected Site Count': [report['Affected Site Count'].sum()],
+                        'Outage Duration': [report['Outage Duration'].sum()],
+                        'Event Count': [report['Event Count'].sum()],
+                        'Total Allowable Limit (Hour)': [report['Total Allowable Limit (Hour)'].sum()]
                     })
                     report = pd.concat([report, total_row], ignore_index=True)
                     return report
@@ -106,7 +111,7 @@ if uploaded_outage_file and not regions_zones.empty:
                         f'<i><small>(as per RMS)</small></i></h4>', 
                         unsafe_allow_html=True
                     )
-                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
+                    report['Outage Duration'] = report['Outage Duration'].apply(lambda x: f"{x:.2f}")
                     st.table(report)
                     return report
 
@@ -195,11 +200,12 @@ if uploaded_site_list_file:
         def to_excel_updated(df):
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, sheet_name='Client Count Report', index=False)
+                df.to_excel(writer, sheet_name='Updated Client Count', index=False)
             output.seek(0)
             return output
 
-        if st.button("Download Updated Client Count Report"):
-            output_uploaded = to_excel_updated(client_report_uploaded)
-            st.download_button(label="Download Updated Client Count Report", data=output_uploaded, file_name="Updated_Client_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            st.success("Updated report generated and ready to download!")
+        if st.button("Download Updated Report"):
+            output = to_excel_updated(client_report_uploaded)
+            st.download_button(label="Download Updated Client Report", data=output, file_name="Updated_Client_Site_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+else:
+    st.warning("Please upload a new RMS Station Status Report to update client counts.")
