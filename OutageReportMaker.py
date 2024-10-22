@@ -32,26 +32,36 @@ if uploaded_outage_file:
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
+                # Get unique regions and zones from the data
+                regions = df['Cluster'].unique()
+                zones = df['Zone'].unique()
+
+                # Function to generate report for each client
                 def generate_report(client_df):
-                    report = client_df.groupby(['Cluster', 'Zone']).agg(
-                        Site_Count=('Site Alias', 'nunique'),
-                        Duration=('Duration (hours)', 'sum'),
-                        Event_Count=('Site Alias', 'count')
-                    ).reset_index()
-                    report = report.rename(columns={
-                        'Cluster': 'Region',
-                        'Site_Count': 'Site Count',
-                        'Event_Count': 'Event Count',
-                        'Duration': 'Duration (hours)'
-                    })
-                    total_row = pd.DataFrame({
-                        'Region': ['Total'],
-                        'Zone': [''],
-                        'Site Count': [report['Site Count'].sum()],
-                        'Duration (hours)': [report['Duration (hours)'].sum()],
-                        'Event Count': [report['Event Count'].sum()]
-                    })
+                    report = pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
+                    
+                    for region in regions:
+                        for zone in zones:
+                            # Filter for the current region and zone
+                            site_count = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Site Alias'].nunique()
+                            duration = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Duration (hours)'].sum()
+                            event_count = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Site Alias'].count()
+                            
+                            # Append the data
+                            report = report.append({
+                                'Region': region,
+                                'Zone': zone,
+                                'Site Count': site_count,
+                                'Duration (hours)': duration if duration else 0,
+                                'Event Count': event_count
+                            }, ignore_index=True)
+
+                    # Calculate total row
+                    total_row = report.sum(numeric_only=True).to_frame().T
+                    total_row['Region'] = 'Total'
+                    total_row['Zone'] = ''
                     report = pd.concat([report, total_row], ignore_index=True)
+
                     return report
 
                 clients = np.append('All', df['Client'].unique())
@@ -69,7 +79,7 @@ if uploaded_outage_file:
                         f'<i><small>(as per RMS)</small></i></h4>', 
                         unsafe_allow_html=True
                     )
-                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
+                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "0.00")
                     st.table(report)
                     return report
 
