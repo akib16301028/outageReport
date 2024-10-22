@@ -26,37 +26,34 @@ if uploaded_outage_file:
 
             if 'Site Alias' in df.columns:
                 df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
-                df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
                 df['Start Time'] = pd.to_datetime(df['Start Time'])
                 df['End Time'] = pd.to_datetime(df['End Time'])
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
-                # Get unique regions and zones from the data
-                regions = df['Cluster'].unique()
-                zones = df['Zone'].unique()
+                clients = df['Client'].unique()
+                reports = {}
 
-                # Function to generate report for each client
-                def generate_report(client_df):
+                # Function to generate report for each client based on regions and zones from the client report
+                def generate_report(client_df, client_report):
                     report = pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
-                    
-                    for region in regions:
-                        for zone in zones:
-                            # Filter for the current region and zone
-                            site_count = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Site Alias'].nunique()
-                            duration = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Duration (hours)'].sum()
-                            event_count = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Site Alias'].count()
-                            
-                            # Create a new row
-                            new_row = {
-                                'Region': region,
-                                'Zone': zone,
-                                'Site Count': site_count,
-                                'Duration (hours)': duration if duration else 0,
-                                'Event Count': event_count
-                            }
-                            # Append the new row to the report DataFrame
-                            report = pd.concat([report, pd.DataFrame([new_row])], ignore_index=True)
+
+                    for _, row in client_report.iterrows():
+                        region = row['Cluster']  # Use Cluster as Region
+                        zone = row['Zone']
+
+                        site_count = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Site Alias'].nunique()
+                        duration = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Duration (hours)'].sum()
+                        event_count = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Site Alias'].count()
+
+                        new_row = {
+                            'Region': region,
+                            'Zone': zone,
+                            'Site Count': site_count,
+                            'Duration (hours)': duration if duration else 0,
+                            'Event Count': event_count
+                        }
+                        report = pd.concat([report, pd.DataFrame([new_row])], ignore_index=True)
 
                     # Calculate total row
                     total_row = report.sum(numeric_only=True).to_frame().T
@@ -66,49 +63,42 @@ if uploaded_outage_file:
 
                     return report
 
-                clients = np.append('All', df['Client'].unique())
-                reports = {}
-                for client in df['Client'].unique():
-                    client_df = df[df['Client'] == client]
-                    report = generate_report(client_df)
-                    reports[client] = report
+                # Load the client site count report
+                client_site_count = pd.read_excel("RMS Station Status Report.xlsx", header=2)  # Make sure the path is correct
+                client_site_count.columns = client_site_count.columns.str.strip()
 
-                selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
+                # Ensure the 'Site Alias' column exists
+                if 'Site Alias' in client_site_count.columns:
+                    client_report = client_site_count.explode('Clients').groupby(['Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
 
-                def display_table(client_name, report):
-                    st.markdown(
-                        f'<h4>SC wise <b>{client_name}</b> Site Outage Status on <b>{report_date}</b> '
-                        f'<i><small>(as per RMS)</small></i></h4>', 
-                        unsafe_allow_html=True
-                    )
-                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "0.00")
-                    st.table(report)
-                    return report
+                    for client in clients:
+                        client_df = df[df['Client'] == client]
+                        report = generate_report(client_df, client_report)
+                        reports[client] = report
 
-                if selected_client == 'All':
-                    for client in df['Client'].unique():
-                        report = reports[client]
-                        display_table(client, report)
+                    selected_client = st.selectbox("Select a client to filter", options=np.append('All', clients), index=0)
+
+                    def display_table(client_name, report):
+                        st.markdown(
+                            f'<h4>SC wise <b>{client_name}</b> Site Outage Status on <b>{report_date}</b> '
+                            f'<i><small>(as per RMS)</small></i></h4>', 
+                            unsafe_allow_html=True
+                        )
+                        report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "0.00")
+                        st.table(report)
+
+                    if selected_client == 'All':
+                        for client in clients:
+                            report = reports[client]
+                            display_table(client, report)
+                    else:
+                        report = reports[selected_client]
+                        display_table(selected_client, report)
+
                 else:
-                    report = reports[selected_client]
-                    display_table(selected_client, report)
-
-                def to_excel():
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        df.to_excel(writer, sheet_name='Original Data', index=False)
-                        for client, report in reports.items():
-                            report.to_excel(writer, sheet_name=f'{client} Report', index=False)
-                    output.seek(0)
-                    return output
-
-                if st.button("Download Report"):
-                    output = to_excel()
-                    file_name = f"SC wise {selected_client} Site Outage Status on {report_date}.xlsx"
-                    st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    st.success("Report generated and ready to download!")
+                    st.error("The required 'Site Alias' column is not found in the client site count file.")
             else:
-                st.error("The required 'Site Alias' column is not found.")
+                st.error("The required 'Site Alias' column is not found in the outage data.")
 else:
     st.warning("Please upload a valid Outage Excel file.")
 
