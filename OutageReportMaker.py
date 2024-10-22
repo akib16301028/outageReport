@@ -203,3 +203,45 @@ if uploaded_site_list_file:
             output_uploaded = to_excel_updated(client_report_uploaded)
             st.download_button(label="Download Updated Client Count Report", data=output_uploaded, file_name="Updated_Client_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.success("Updated report generated and ready to download!")
+
+# Step 3: Upload Previous Outage Data File
+st.subheader("Upload Previous Outage Data")
+
+uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
+
+if uploaded_previous_file:
+    xl_previous = pd.ExcelFile(uploaded_previous_file)
+    
+    if 'Report Summary' in xl_previous.sheet_names:
+        df_previous = xl_previous.parse('Report Summary', header=0)
+        df_previous.columns = df_previous.columns.str.strip()
+        
+        # Check if the necessary columns exist
+        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns:
+            
+            # Convert Elapsed Time to hours
+            def convert_to_hours(elapsed_time):
+                h, m, s = map(int, elapsed_time.split(':'))
+                return round(h + m / 60 + s / 3600, 2)
+            
+            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
+            
+            # Create Pivot Table for Zone and Elapsed Time
+            pivot_elapsed_time = df_previous.pivot_table(
+                index='Zone',
+                values='Elapsed Time (hours)',
+                aggfunc='sum'
+            ).reset_index()
+
+            st.write("Pivot Table for Elapsed Time by Zone")
+            st.table(pivot_elapsed_time)
+            
+            # This pivot table will be used later for the Outage table
+            # You can store this result for further usage in the Outage table processing step
+            
+        else:
+            st.error("The required columns 'Elapsed Time' and 'Zone' are not found.")
+    else:
+        st.error("The 'Report Summary' sheet is not found.")
+else:
+    st.warning("Please upload a valid Previous Outage Excel file.")
