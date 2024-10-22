@@ -47,14 +47,16 @@ if uploaded_outage_file:
                             duration = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Duration (hours)'].sum()
                             event_count = client_df[(client_df['Cluster'] == region) & (client_df['Zone'] == zone)]['Site Alias'].count()
                             
-                            # Append the data
-                            report = report.append({
+                            # Create a new row
+                            new_row = {
                                 'Region': region,
                                 'Zone': zone,
                                 'Site Count': site_count,
                                 'Duration (hours)': duration if duration else 0,
                                 'Event Count': event_count
-                            }, ignore_index=True)
+                            }
+                            # Append the new row to the report DataFrame
+                            report = pd.concat([report, pd.DataFrame([new_row])], ignore_index=True)
 
                     # Calculate total row
                     total_row = report.sum(numeric_only=True).to_frame().T
