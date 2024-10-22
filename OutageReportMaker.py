@@ -213,7 +213,8 @@ if uploaded_previous_file:
     xl_previous = pd.ExcelFile(uploaded_previous_file)
     
     if 'Report Summary' in xl_previous.sheet_names:
-        df_previous = xl_previous.parse('Report Summary', header=0)
+        # Parse the 'Report Summary' sheet, starting from row 3 for column headers
+        df_previous = xl_previous.parse('Report Summary', header=2)  # Header starts from row 3 (index 2)
         df_previous.columns = df_previous.columns.str.strip()
         
         # Check if the necessary columns exist
@@ -221,8 +222,11 @@ if uploaded_previous_file:
             
             # Convert Elapsed Time to hours
             def convert_to_hours(elapsed_time):
-                h, m, s = map(int, elapsed_time.split(':'))
-                return round(h + m / 60 + s / 3600, 2)
+                try:
+                    h, m, s = map(int, elapsed_time.split(':'))
+                    return round(h + m / 60 + s / 3600, 2)
+                except ValueError:
+                    return 0  # If invalid format, return 0 hours
             
             df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
             
