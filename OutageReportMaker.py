@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 import io
 
-# Step 1: Upload file for Outage Data
+# Title for the app
 st.title("Outage Data Analysis")
 
+# Step 1: Upload file for Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
 if uploaded_outage_file:
@@ -99,40 +100,57 @@ if uploaded_outage_file:
 else:
     st.warning("Please upload a valid Outage Excel file.")
 
-# Section 2: Upload RMS Site List
-st.subheader("Upload RMS Station Status Report")
 
-uploaded_site_list_file = st.file_uploader("Please upload RMS Station Status Report", type="xlsx")
+# Section 2: RMS Site List Processing
+
+st.subheader("Client Site Count from RMS Station Status Report")
+
+# Step 1: Load the initial file from GitHub repository
+try:
+    initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
+    df_initial = pd.read_excel(initial_file_path, header=2)
+    df_initial.columns = df_initial.columns.str.strip()
+
+    # Process the initial file to extract client names and count by Cluster/Zone
+    if 'Site Alias' in df_initial.columns:
+        df_initial['Client'] = df_initial['Site Alias'].str.extract(r'\((.*?)\)')
+        client_report_initial = df_initial.groupby(['Client', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
+
+        # Show the initial processed data
+        st.write("Initial Client Site Count Report (from repository)")
+        st.table(client_report_initial)
+    else:
+        st.error("The required 'Site Alias' column is not found in the initial repository file.")
+
+except FileNotFoundError:
+    st.error("Initial file not found in repository.")
+
+# Step 2: Allow user to upload a new file to update
+uploaded_site_list_file = st.file_uploader("Upload new RMS Station Status Report to update", type="xlsx")
 
 if uploaded_site_list_file:
-    xl_site_list = pd.ExcelFile(uploaded_site_list_file)
-    df_site_list = xl_site_list.parse(header=2)
-    df_site_list.columns = df_site_list.columns.str.strip()
+    df_uploaded = pd.read_excel(uploaded_site_list_file, header=2)
+    df_uploaded.columns = df_uploaded.columns.str.strip()
 
-    if 'Site Alias' in df_site_list.columns:
-        df_site_list['Client'] = df_site_list['Site Alias'].str.extract(r'\((.*?)\)')
-        
-        def generate_client_report(df):
-            client_report = df.groupby(['Client', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
-            return client_report
-        
-        client_report = generate_client_report(df_site_list)
-        
-        st.write("Client-wise Site Count Report")
-        st.table(client_report)
-        
-        # Function to update and download
-        def to_excel_site_list(df):
+    if 'Site Alias' in df_uploaded.columns:
+        df_uploaded['Client'] = df_uploaded['Site Alias'].str.extract(r'\((.*?)\)')
+        client_report_uploaded = df_uploaded.groupby(['Client', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
+
+        # Show the updated data
+        st.write("Updated Client Site Count Report")
+        st.table(client_report_uploaded)
+
+        # Function to convert updated report to Excel and download
+        def to_excel_updated(df):
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, sheet_name='Client Count Report', index=False)
             output.seek(0)
             return output
-        
-        if st.button("Download Client Count Report"):
-            output_site_list = to_excel_site_list(client_report)
-            st.download_button(label="Download Excel", data=output_site_list, file_name="Client_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        if st.button("Download Updated Client Count Report"):
+            output_uploaded = to_excel_updated(client_report_uploaded)
+            st.download_button(label="Download Excel", data=output_uploaded, file_name="Updated_Client_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
     else:
         st.error("The required 'Site Alias' column is not found.")
-else:
-    st.warning("Please upload a valid RMS Station Status Report.")
