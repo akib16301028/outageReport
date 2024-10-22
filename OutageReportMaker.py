@@ -204,6 +204,10 @@ if uploaded_site_list_file:
             st.download_button(label="Download Updated Client Count Report", data=output_uploaded, file_name="Updated_Client_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.success("Updated report generated and ready to download!")
 
+import streamlit as st
+import pandas as pd
+import io
+
 # Step 3: Upload Previous Outage Data File
 st.subheader("Upload Previous Outage Data")
 
@@ -220,14 +224,20 @@ if uploaded_previous_file:
         # Check if the necessary columns exist
         if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns:
             
-            # Convert Elapsed Time to hours
+            # Convert Elapsed Time to hours with error handling
             def convert_to_hours(elapsed_time):
                 try:
-                    h, m, s = map(int, elapsed_time.split(':'))
-                    return round(h + m / 60 + s / 3600, 2)
+                    if pd.isna(elapsed_time):
+                        return 0
+                    time_parts = elapsed_time.split(':')
+                    if len(time_parts) == 3:
+                        h, m, s = map(int, time_parts)
+                        return round(h + m / 60 + s / 3600, 2)
+                    else:
+                        return 0
                 except ValueError:
                     return 0  # If invalid format, return 0 hours
-            
+
             df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
             
             # Create Pivot Table for Zone and Elapsed Time
@@ -249,3 +259,4 @@ if uploaded_previous_file:
         st.error("The 'Report Summary' sheet is not found.")
 else:
     st.warning("Please upload a valid Previous Outage Excel file.")
+
