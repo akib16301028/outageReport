@@ -6,27 +6,24 @@ import io
 # Title for the app
 st.title("Outage Data Analysis")
 
-# Function to load the default RMS Station Status Report file
-def load_default_file(file_path):
-    try:
-        df_default = pd.read_excel(file_path, header=2)
-        df_default.columns = df_default.columns.str.strip()
+# Step 1: Load the default RMS Station Status Report file
+try:
+    default_file_path = "RMS Station Status Report.xlsx"  # Default file path
+    df_default = pd.read_excel(default_file_path, header=2)
+    df_default.columns = df_default.columns.str.strip()
 
-        if 'Site Alias' in df_default.columns:
-            df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
-            df_default_exploded = df_default.explode('Clients')
-            regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
-            return df_default, regions_zones
-        else:
-            st.error("The required 'Site Alias' column is not found in the default file.")
-            return None, pd.DataFrame()
-    except FileNotFoundError:
-        st.error("Default file not found.")
-        return None, pd.DataFrame()
+    # Extract Regions and Zones from the default file
+    if 'Site Alias' in df_default.columns:
+        df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
+        df_default_exploded = df_default.explode('Clients')
+        regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
+    else:
+        st.error("The required 'Site Alias' column is not found in the default file.")
+        regions_zones = pd.DataFrame()  # Empty DataFrame to avoid errors
 
-# Load the default RMS Station Status Report file
-default_file_path = "RMS Station Status Report.xlsx"
-df_default, regions_zones = load_default_file(default_file_path)
+except FileNotFoundError:
+    st.error("Default file not found.")
+    regions_zones = pd.DataFrame()  # Empty DataFrame to avoid errors
 
 # Step 2: Upload file for Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
@@ -55,11 +52,14 @@ if uploaded_outage_file and not regions_zones.empty:
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
                 def generate_report(client_df, selected_client):
+                    # Extract regions and zones relevant to the selected client
                     relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
                     if relevant_zones.empty:
                         return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
 
                     relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
+
+                    # Create a full report structure with the relevant regions and zones
                     full_report = relevant_regions_zones.copy()
                     client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
                         Site_Count=('Site Alias', 'nunique'),
@@ -67,7 +67,9 @@ if uploaded_outage_file and not regions_zones.empty:
                         Event_Count=('Site Alias', 'count')
                     ).reset_index()
 
-                    report = pd.merge(full_report, client_agg, how='left', on=['Cluster', 'Zone']).fillna(0)
+                    # Merge the client aggregated report with the full report
+                    report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
+                    report = report.fillna(0)  # Fill NaNs with zeros
                     report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))  # Rounding the duration
 
                     # Rename columns
@@ -100,12 +102,13 @@ if uploaded_outage_file and not regions_zones.empty:
 
                 def display_table(client_name, report):
                     st.markdown(
-                        f'<h4>SC wise <b>{client_name}</b> Site Outage Status on <b>{report_date}</b>'
-                        f' <i><small>(as per RMS)</small></i></h4>', 
+                        f'<h4>SC wise <b>{client_name}</b> Site Outage Status on <b>{report_date}</b> '
+                        f'<i><small>(as per RMS)</small></i></h4>', 
                         unsafe_allow_html=True
                     )
                     report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
                     st.table(report)
+                    return report
 
                 if selected_client == 'All':
                     for client in df['Client'].unique():
@@ -138,15 +141,17 @@ else:
         st.warning("Please upload a valid Outage Excel file.")
 
 # Section 2: RMS Site List Processing with Multiple Clients
+
 st.subheader("Client Site Count from RMS Station Status Report")
 
 # Load the initial file from GitHub repository
 if not regions_zones.empty:
     try:
-        initial_file_path = "RMS Station Status Report.xlsx"
+        initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
         df_initial = pd.read_excel(initial_file_path, header=2)
         df_initial.columns = df_initial.columns.str.strip()
 
+        # Process the initial file to extract client names and count by Cluster/Zone
         if 'Site Alias' in df_initial.columns:
             df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
 
@@ -174,7 +179,8 @@ if uploaded_previous_file:
     xl_previous = pd.ExcelFile(uploaded_previous_file)
     
     if 'Report Summary' in xl_previous.sheet_names:
-        df_previous = xl_previous.parse('Report Summary', header=2)
+        # Parse the 'Report Summary' sheet, starting from row 3 for column headers
+        df_previous = xl_previous.parse('Report Summary', header=2)  # Header starts from row 3 (index 2)
         df_previous.columns = df_previous.columns.str.strip()
         
         # Check if the necessary columns exist
@@ -188,45 +194,35 @@ if uploaded_previous_file:
                     hours = total_seconds / 3600  # Convert seconds to hours
                     return round(hours, 2)
                 except Exception as e:
-                    st.warning(f"Error converting '{elapsed_time}': {e}")  # Optional: log the error for debugging
+                    st.warning(f"Error converting '{elapsed_time}': {e}")  # Log the error for debugging
                     return 0  # Handle any unexpected errors by returning 0 hours
 
             df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
-            
-            # Extract unique clients from the Tenant (Client) column
-            clients = df_previous['Tenant'].str.strip().str.title().unique().tolist()
-            selected_client = st.selectbox("Select a Client (Tenant)", clients)
-            
-            # Filter the data for the selected client (case-insensitive comparison)
-            df_filtered = df_previous[df_previous['Tenant'].str.strip().str.title() == selected_client]
+
+            # Display the processed previous outage data
+            st.write("Processed Previous Outage Data")
+            st.table(df_previous)
 
             # If filtered data exists for the selected client
-            if not df_filtered.empty:
-                st.write(f"Showing data for Client: {selected_client}")
+            if not df_previous.empty:
+                st.write("Showing previous outage data summary")
 
-                # Create Pivot Table for Zone and Elapsed Time (for the selected client)
-                pivot_elapsed_time = df_filtered.pivot_table(
+                # Create Pivot Table for Zone and Elapsed Time
+                pivot_previous = df_previous.pivot_table(
                     index='Zone',
                     values='Elapsed Time (hours)',
                     aggfunc='sum'
                 ).reset_index()
 
                 # Add total row to sum elapsed time
-                total_row = pd.DataFrame({'Zone': ['Total'], 'Elapsed Time (hours)': [pivot_elapsed_time['Elapsed Time (hours)'].sum()]})
-                pivot_elapsed_time = pd.concat([pivot_elapsed_time, total_row], ignore_index=True)
+                total_row = pd.DataFrame({'Zone': ['Total'], 'Elapsed Time (hours)': [pivot_previous['Elapsed Time (hours)'].sum()]})
+                pivot_previous = pd.concat([pivot_previous, total_row], ignore_index=True)
 
                 # Ensure two decimal places in the output
-                pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
+                pivot_previous['Elapsed Time (hours)'] = pivot_previous['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
 
-                st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
-                st.table(pivot_elapsed_time)
-
-            else:
-                st.error(f"No data available for the client '{selected_client}'")
+                st.write("Pivot Table for Elapsed Time by Zone (Previous Data)")
+                st.table(pivot_previous)
 
         else:
-            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
-    else:
-        st.error("The 'Report Summary' sheet is not found.")
-else:
-    st.warning("Please upload a valid Previous Outage Excel file.")
+            st.error("Required columns are missing in the uploaded previous outage data.")
