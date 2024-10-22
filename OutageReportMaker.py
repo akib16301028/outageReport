@@ -101,7 +101,7 @@ else:
     st.warning("Please upload a valid Outage Excel file.")
 
 
-# Section 2: RMS Site List Processing
+# Section 2: RMS Site List Processing with Multiple Clients
 
 st.subheader("Client Site Count from RMS Station Status Report")
 
@@ -113,8 +113,14 @@ try:
 
     # Process the initial file to extract client names and count by Cluster/Zone
     if 'Site Alias' in df_initial.columns:
-        df_initial['Client'] = df_initial['Site Alias'].str.extract(r'\((.*?)\)')
-        client_report_initial = df_initial.groupby(['Client', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
+        # Extract multiple clients from the 'Site Alias' column
+        df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
+
+        # Explode the dataframe for each client found
+        df_exploded = df_initial.explode('Clients')
+
+        # Group by Client, Cluster, and Zone to count site occurrences
+        client_report_initial = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
 
         # Show the initial processed data
         st.write("Initial Client Site Count Report (from repository)")
@@ -133,8 +139,14 @@ if uploaded_site_list_file:
     df_uploaded.columns = df_uploaded.columns.str.strip()
 
     if 'Site Alias' in df_uploaded.columns:
-        df_uploaded['Client'] = df_uploaded['Site Alias'].str.extract(r'\((.*?)\)')
-        client_report_uploaded = df_uploaded.groupby(['Client', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
+        # Extract multiple clients from the 'Site Alias' column
+        df_uploaded['Clients'] = df_uploaded['Site Alias'].str.findall(r'\((.*?)\)')
+
+        # Explode the dataframe for each client found
+        df_uploaded_exploded = df_uploaded.explode('Clients')
+
+        # Group by Client, Cluster, and Zone to count site occurrences
+        client_report_uploaded = df_uploaded_exploded.groupby(['Clients', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
 
         # Show the updated data
         st.write("Updated Client Site Count Report")
