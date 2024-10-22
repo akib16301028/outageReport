@@ -51,9 +51,16 @@ if uploaded_outage_file and not regions_zones.empty:
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
-                def generate_report(client_df):
-                    # Create a full report structure with all regions and zones
-                    full_report = regions_zones.copy()
+                def generate_report(client_df, selected_client):
+                    # Extract regions and zones relevant to the selected client
+                    relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
+                    if relevant_zones.empty:
+                        return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
+
+                    relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
+
+                    # Create a full report structure with the relevant regions and zones
+                    full_report = relevant_regions_zones.copy()
                     client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
                         Site_Count=('Site Alias', 'nunique'),
                         Duration=('Duration (hours)', 'sum'),
@@ -88,7 +95,7 @@ if uploaded_outage_file and not regions_zones.empty:
                 reports = {}
                 for client in df['Client'].unique():
                     client_df = df[df['Client'] == client]
-                    report = generate_report(client_df)
+                    report = generate_report(client_df, client)
                     reports[client] = report
 
                 selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
@@ -194,7 +201,5 @@ if uploaded_site_list_file:
 
         if st.button("Download Updated Client Count Report"):
             output_uploaded = to_excel_updated(client_report_uploaded)
-            st.download_button(label="Download Excel", data=output_uploaded, file_name="Updated_Client_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    else:
-        st.error("The required 'Site Alias' column is not found.")
+            st.download_button(label="Download Updated Client Count Report", data=output_uploaded, file_name="Updated_Client_Count_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.success("Updated report generated and ready to download!")
