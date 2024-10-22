@@ -52,11 +52,20 @@ if uploaded_outage_file and not regions_zones.empty:
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
                 def generate_report(client_df):
-                    report = client_df.groupby(['Cluster', 'Zone']).agg(
+                    # Create a full report structure with all regions and zones
+                    full_report = regions_zones.copy()
+                    client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
                         Site_Count=('Site Alias', 'nunique'),
                         Duration=('Duration (hours)', 'sum'),
                         Event_Count=('Site Alias', 'count')
                     ).reset_index()
+
+                    # Merge the client aggregated report with the full report
+                    report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
+                    report = report.fillna(0)  # Fill NaNs with zeros
+                    report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))  # Rounding the duration
+
+                    # Rename columns
                     report = report.rename(columns={
                         'Cluster': 'Region',
                         'Site_Count': 'Site Count',
@@ -64,9 +73,7 @@ if uploaded_outage_file and not regions_zones.empty:
                         'Duration': 'Duration (hours)'
                     })
 
-                    # Filter report based on the default regions and zones
-                    report = report[report[['Region', 'Zone']].apply(tuple, axis=1).isin(regions_zones.apply(tuple, axis=1))]
-
+                    # Add total row
                     total_row = pd.DataFrame({
                         'Region': ['Total'],
                         'Zone': [''],
