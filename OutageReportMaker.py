@@ -208,6 +208,10 @@ import streamlit as st
 import pandas as pd
 import io
 
+import streamlit as st
+import pandas as pd
+import io
+
 # Step 3: Upload Previous Outage Data File
 st.subheader("Upload Previous Outage Data")
 
@@ -229,14 +233,15 @@ if uploaded_previous_file:
                 try:
                     if pd.isna(elapsed_time):
                         return 0
-                    time_parts = elapsed_time.split(':')
-                    if len(time_parts) == 3:
-                        h, m, s = map(int, time_parts)
-                        return round(h + m / 60 + s / 3600, 2)
-                    else:
-                        return 0
-                except ValueError:
-                    return 0  # If invalid format, return 0 hours
+                    # Ensure the value is a string before splitting
+                    if isinstance(elapsed_time, str):
+                        time_parts = elapsed_time.split(':')
+                        if len(time_parts) == 3:
+                            h, m, s = map(int, time_parts)
+                            return round(h + m / 60 + s / 3600, 2)
+                    return 0
+                except Exception as e:
+                    return 0  # Handle any unexpected errors by returning 0 hours
 
             df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
             
@@ -259,4 +264,3 @@ if uploaded_previous_file:
         st.error("The 'Report Summary' sheet is not found.")
 else:
     st.warning("Please upload a valid Previous Outage Excel file.")
-
