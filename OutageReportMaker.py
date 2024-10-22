@@ -28,9 +28,6 @@ except FileNotFoundError:
 # Step 2: Upload file for Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
-# Initialize df_previous to an empty DataFrame
-df_previous = pd.DataFrame()
-
 if uploaded_outage_file and not regions_zones.empty:
     report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
 
@@ -47,29 +44,18 @@ if uploaded_outage_file and not regions_zones.empty:
             df.columns = df.columns.str.strip()
 
             if 'Site Alias' in df.columns:
-                # Normalize client names
-                df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')[0].str.strip().str.title()
+                df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
                 df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
                 df['Start Time'] = pd.to_datetime(df['Start Time'])
                 df['End Time'] = pd.to_datetime(df['End Time'])
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
-                # Ensure df_previous has data if it was uploaded
-                if uploaded_previous_file:
-                    xl_previous = pd.ExcelFile(uploaded_previous_file)
-                    if 'Report Summary' in xl_previous.sheet_names:
-                        df_previous = xl_previous.parse('Report Summary', header=2)
-                        df_previous.columns = df_previous.columns.str.strip()
-                        # Convert Elapsed Time to hours if necessary
-                        if 'Elapsed Time' in df_previous.columns:
-                            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'] / 3600
-
-                def generate_report(client_df, selected_client, df_previous):
+                def generate_report(client_df, selected_client):
                     # Extract regions and zones relevant to the selected client
-                    relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client, case=False)]
+                    relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
                     if relevant_zones.empty:
-                        return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count', 'Total Redeem Hour'])
+                        return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
 
                     relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
 
@@ -86,14 +72,6 @@ if uploaded_outage_file and not regions_zones.empty:
                     report = report.fillna(0)  # Fill NaNs with zeros
                     report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))  # Rounding the duration
 
-                    # Add Total Redeem Hour column by matching client and zone
-                    if not df_previous.empty:
-                        df_previous_filtered = df_previous[df_previous['Tenant'].str.strip().str.title() == selected_client]
-                        for index, row in report.iterrows():
-                            zone = row['Zone']
-                            total_redeem_hour = df_previous_filtered[df_previous_filtered['Zone'] == zone]['Elapsed Time (hours)'].sum()
-                            report.at[index, 'Total Redeem Hour'] = total_redeem_hour
-
                     # Rename columns
                     report = report.rename(columns={
                         'Cluster': 'Region',
@@ -108,8 +86,7 @@ if uploaded_outage_file and not regions_zones.empty:
                         'Zone': [''],
                         'Site Count': [report['Site Count'].sum()],
                         'Duration (hours)': [report['Duration (hours)'].sum()],
-                        'Event Count': [report['Event Count'].sum()],
-                        'Total Redeem Hour': [report['Total Redeem Hour'].sum()]
+                        'Event Count': [report['Event Count'].sum()]
                     })
                     report = pd.concat([report, total_row], ignore_index=True)
                     return report
@@ -118,7 +95,7 @@ if uploaded_outage_file and not regions_zones.empty:
                 reports = {}
                 for client in df['Client'].unique():
                     client_df = df[df['Client'] == client]
-                    report = generate_report(client_df, client, df_previous)
+                    report = generate_report(client_df, client)
                     reports[client] = report
 
                 selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
@@ -194,19 +171,69 @@ if not regions_zones.empty:
         st.error("Initial file not found in repository.")
 
 # Step 3: Upload Previous Outage Data File
-st.subheader("Upload Previous Outage Data for Comparison")
-uploaded_previous_file = st.file_uploader("Please upload the previous Outage Data Excel file", type="xlsx")
+st.subheader("Upload Previous Outage Data")
+
+uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
 
 if uploaded_previous_file:
     xl_previous = pd.ExcelFile(uploaded_previous_file)
+    
     if 'Report Summary' in xl_previous.sheet_names:
-        df_previous = xl_previous.parse('Report Summary', header=2)
+        # Parse the 'Report Summary' sheet, starting from row 3 for column headers
+        df_previous = xl_previous.parse('Report Summary', header=2)  # Header starts from row 3 (index 2)
         df_previous.columns = df_previous.columns.str.strip()
         
-        # Convert Elapsed Time to hours if necessary
-        if 'Elapsed Time' in df_previous.columns:
-            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'] / 3600
-            st.success("Previous Outage Data loaded successfully!")
-            st.table(df_previous)
+        # Check if the necessary columns exist
+        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
+            
+            # Convert Elapsed Time to hours
+            def convert_to_hours(elapsed_time):
+                try:
+                    # Handle time format using pandas Timedelta conversion
+                    total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
+                    hours = total_seconds / 3600  # Convert seconds to hours
+                    return round(hours, 2)
+                except Exception as e:
+                    return 0  # Handle any unexpected errors by returning 0 hours
+
+            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
+            
+            # Extract unique clients from the Tenant (Client) column
+            clients = df_previous['Tenant'].str.strip().str.title().unique().tolist()
+
+            # Normalize client names to match with the previously stored client info (case-insensitive match)
+            selected_client = st.selectbox("Select a Client (Tenant)", clients)
+            
+            # Filter the data for the selected client (case-insensitive comparison)
+            df_filtered = df_previous[df_previous['Tenant'].str.strip().str.title() == selected_client]
+
+            # If filtered data exists for the selected client
+            if not df_filtered.empty:
+                st.write(f"Showing data for Client: {selected_client}")
+
+                # Create Pivot Table for Zone and Elapsed Time (for the selected client)
+                pivot_elapsed_time = df_filtered.pivot_table(
+                    index='Zone',
+                    values='Elapsed Time (hours)',
+                    aggfunc='sum'
+                ).reset_index()
+
+                # Add total row to sum elapsed time
+                total_row = pd.DataFrame({'Zone': ['Total'], 'Elapsed Time (hours)': [pivot_elapsed_time['Elapsed Time (hours)'].sum()]})
+                pivot_elapsed_time = pd.concat([pivot_elapsed_time, total_row], ignore_index=True)
+
+                # Ensure two decimal places in the output
+                pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
+
+                st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
+                st.table(pivot_elapsed_time)
+
+            else:
+                st.error(f"No data available for the client '{selected_client}'")
+
+        else:
+            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
     else:
-        st.error("The required 'Report Summary' sheet is not found in the previous outage file.")
+        st.error("The 'Report Summary' sheet is not found.")
+else:
+    st.warning("Please upload a valid Previous Outage Excel file.")
