@@ -51,6 +51,49 @@ if uploaded_outage_file and not regions_zones.empty:
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
+                # Step 3: Upload Previous Outage Data File
+                uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx", key="prev")
+
+                total_redeem_hours = {}
+
+                if uploaded_previous_file:
+                    xl_previous = pd.ExcelFile(uploaded_previous_file)
+                    
+                    if 'Report Summary' in xl_previous.sheet_names:
+                        df_previous = xl_previous.parse('Report Summary', header=2)  # Header starts from row 3 (index 2)
+                        df_previous.columns = df_previous.columns.str.strip()
+                        
+                        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
+                            
+                            # Convert Elapsed Time to hours
+                            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(lambda x: x.total_seconds() / 3600 if isinstance(x, pd.Timedelta) else 0)
+
+                            # Creating a mapping for total redeem hours by zone and client
+                            for index, row in df_previous.iterrows():
+                                tenant_name = row['Tenant'].strip().title()
+                                zone_name = row['Zone'].strip()
+                                hours = row['Elapsed Time (hours)']
+                                
+                                # Normalizing client name
+                                client_name_mapping = {
+                                    "Grameenphone": "GP",
+                                    "Banglalink": "BL",
+                                    "Robi": "ROBI",
+                                    "Banjo": "BANJO"
+                                }
+                                
+                                client_name = client_name_mapping.get(tenant_name, tenant_name)
+                                
+                                if client_name not in total_redeem_hours:
+                                    total_redeem_hours[client_name] = {}
+                                if zone_name not in total_redeem_hours[client_name]:
+                                    total_redeem_hours[client_name][zone_name] = 0
+                                total_redeem_hours[client_name][zone_name] += hours
+                        else:
+                            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
+                    else:
+                        st.error("The 'Report Summary' sheet is not found.")
+
                 def generate_report(client_df, selected_client):
                     # Extract regions and zones relevant to the selected client
                     relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
@@ -81,18 +124,21 @@ if uploaded_outage_file and not regions_zones.empty:
                     })
 
                     # Add Total Redeem Hours
-                    client_name_mapping = {
-                        "Grameenphone": "GP",
-                        "Banglalink": "BL",
-                        "Robi": "ROBI",
-                        "Banjo": "BANJO"
-                    }
-
-                    # Retrieve Total Redeem Hours for the relevant client and zone
                     for index, row in report.iterrows():
                         client_name = selected_client if selected_client != 'All' else row['Region']  # Adjust as per your logic
                         zone_name = row['Zone']
-                        redeem_hours = total_redeem_hours.get(client_name, {}).get(zone_name, 0)
+                        
+                        if client_name not in total_redeem_hours:
+                            st.warning(f"Client '{client_name}' not found in total redeem hours.")
+                            report.at[index, 'Total Redeem Hours'] = 0
+                            continue
+                        
+                        if zone_name not in total_redeem_hours[client_name]:
+                            st.warning(f"Zone '{zone_name}' not found for client '{client_name}'.")
+                            report.at[index, 'Total Redeem Hours'] = 0
+                            continue
+                        
+                        redeem_hours = total_redeem_hours[client_name][zone_name]
                         report.at[index, 'Total Redeem Hours'] = redeem_hours
 
                     # Add total row
@@ -147,88 +193,10 @@ if uploaded_outage_file and not regions_zones.empty:
                     output = to_excel()
                     file_name = f"SC wise {selected_client} Site Outage Status on {report_date}.xlsx"
                     st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    st.success("Report generated and ready to download!")
+                    st.success("Report generated and ready for download.")
             else:
-                st.error("The required 'Site Alias' column is not found.")
-else:
-    if uploaded_outage_file:
-        st.warning("Regions and zones not available from the default file. Please ensure it is uploaded.")
-    else:
-        st.warning("Please upload a valid Outage Excel file.")
-
-# Section 2: RMS Site List Processing with Multiple Clients
-
-st.subheader("Client Site Count from RMS Station Status Report")
-
-# Load the initial file from GitHub repository
-if not regions_zones.empty:
-    try:
-        initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
-        df_initial = pd.read_excel(initial_file_path, header=2)
-        df_initial.columns = df_initial.columns.str.strip()
-
-        # Process the initial file to extract client names and count by Cluster/Zone
-        if 'Site Alias' in df_initial.columns:
-            df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
-
-            # Explode the dataframe for each client found
-            df_exploded = df_initial.explode('Clients')
-
-            # Group by Client, Cluster, and Zone to count site occurrences
-            client_report_initial = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
-
-            # Show the initial processed data
-            st.write("Initial Client Site Count Report (from repository)")
-            st.table(client_report_initial)
+                st.error("The required 'Site Alias' column is not found in the Outage Data file.")
         else:
-            st.error("The required 'Site Alias' column is not found in the initial repository file.")
-
-    except FileNotFoundError:
-        st.error("Initial file not found in repository.")
-
-# Step 3: Upload Previous Outage Data File
-st.subheader("Upload Previous Outage Data")
-
-uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
-
-# Initialize Total Redeem Hours mapping
-total_redeem_hours = {}
-
-if uploaded_previous_file:
-    xl_previous = pd.ExcelFile(uploaded_previous_file)
-    
-    if 'Report Summary' in xl_previous.sheet_names:
-        # Parse the 'Report Summary' sheet, starting from row 3 for column headers
-        df_previous = xl_previous.parse('Report Summary', header=2)  # Adjust header as needed
-        df_previous.columns = df_previous.columns.str.strip()
-
-        # Assuming 'Elapsed Time' and 'Zone' columns exist
-        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
-            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(lambda x: x.total_seconds() / 3600 if isinstance(x, pd.Timedelta) else 0)
-
-            # Creating a mapping for total redeem hours by zone and client
-            for index, row in df_previous.iterrows():
-                tenant_name = row['Tenant'].strip().title()
-                zone_name = row['Zone'].strip()
-                hours = row['Elapsed Time (hours)']
-                
-                # Normalize client name
-                client_name = client_name_mapping.get(tenant_name, tenant_name)
-                
-                if client_name not in total_redeem_hours:
-                    total_redeem_hours[client_name] = {}
-                if zone_name not in total_redeem_hours[client_name]:
-                    total_redeem_hours[client_name][zone_name] = 0
-                total_redeem_hours[client_name][zone_name] += hours
-    else:
-        st.error("The required 'Report Summary' sheet is not found in the uploaded previous file.")
-
-st.markdown(
-    """
-    <footer style='text-align: center; margin-top: 20px;'>
-        <small>Developed by [Your Name] &copy; 2024</small>
-    </footer>
-    """,
-    unsafe_allow_html=True
-)
-
+            st.error("The 'RMS Alarm Elapsed Report' sheet is not found.")
+else:
+    st.info("Upload an outage data file to proceed.")
