@@ -42,7 +42,7 @@ if uploaded_file:
                 # Round the Duration to 2 decimal places with rounding logic
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2) if x >= 0.01 else np.nan)
 
-                # Function to generate a report for each client
+                # Function to generate an outage report for each client
                 def generate_report(client_df):
                     report = client_df.groupby(['Cluster', 'Zone']).agg(
                         Site_Count=('Site Alias', 'nunique'),
@@ -70,7 +70,7 @@ if uploaded_file:
 
                     return report
 
-                # Generate a table for each client
+                # Generate an outage report for each client
                 reports = {}
                 for client in df['Client'].unique():
                     client_df = df[df['Client'] == client]
@@ -84,8 +84,8 @@ if uploaded_file:
                 # Option to show site count tables
                 show_tables = st.checkbox("Show Site Count Tables", value=False)
 
-                # Function to display the table for the selected client
-                def display_table(client_name, report):
+                # Function to display the outage report for the selected client
+                def display_outage_report(client_name, report):
                     # Smaller and formatted text for the header
                     st.markdown(
                         f'<h4>SC wise <b>{client_name}</b> Site Outage Status on <b>{report_date}</b> '
@@ -96,23 +96,47 @@ if uploaded_file:
                     # Format 'Duration (hours)' to show two decimal places
                     report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
 
-                    # Show the table with formatted data
+                    # Show the outage report table with formatted data
                     st.table(report)
 
-                # Display either all tables or the filtered table based on selection
+                # Function to display site count for the selected client
+                def display_site_count_table(client_name):
+                    client_sites = df[df['Client'] == client_name]
+                    client_count_report = client_sites.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
+
+                    total_count = client_count_report['Site Count'].sum()
+                    total_row = pd.DataFrame({
+                        'Cluster': ['Total'],
+                        'Zone': [''],
+                        'Site Count': [total_count]
+                    })
+                    client_count_report = pd.concat([client_count_report, total_row], ignore_index=True)
+
+                    # Smaller and formatted text for the header
+                    st.markdown(
+                        f'<h4><b>{client_name}</b> Client Site Count</h4>', 
+                        unsafe_allow_html=True
+                    )
+
+                    st.table(client_count_report)
+
+                # Display either outage report or site count table based on selection
                 if selected_client == 'All':
                     if show_tables:
                         for client in df['Client'].unique():
-                            report = reports[client]
-                            display_table(client, report)
+                            display_site_count_table(client)
                     else:
                         st.write("Select 'Show Site Count Tables' to view the tables for each client.")
+                    
+                    for client in df['Client'].unique():
+                        report = reports[client]
+                        display_outage_report(client, report)
+
                 else:
                     if show_tables:
-                        report = reports[selected_client]
-                        display_table(selected_client, report)
-                    else:
-                        st.write("Select 'Show Site Count Tables' to view the table for the selected client.")
+                        display_site_count_table(selected_client)
+                    report = reports[selected_client]
+                    display_outage_report(selected_client, report)
 
                 # Function to convert DataFrame to Excel file
                 def to_excel():
