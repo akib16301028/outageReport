@@ -6,10 +6,29 @@ import io
 # Title for the app
 st.title("Outage Data Analysis")
 
-# Step 1: Upload file for Outage Data
+# Step 1: Load the default RMS Station Status Report file
+try:
+    default_file_path = "RMS Station Status Report.xlsx"  # Default file path
+    df_default = pd.read_excel(default_file_path, header=2)
+    df_default.columns = df_default.columns.str.strip()
+
+    # Extract Regions and Zones from the default file
+    if 'Site Alias' in df_default.columns:
+        df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
+        df_default_exploded = df_default.explode('Clients')
+        regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
+    else:
+        st.error("The required 'Site Alias' column is not found in the default file.")
+        regions_zones = pd.DataFrame()  # Empty DataFrame to avoid errors
+
+except FileNotFoundError:
+    st.error("Default file not found.")
+    regions_zones = pd.DataFrame()  # Empty DataFrame to avoid errors
+
+# Step 2: Upload file for Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
-if uploaded_outage_file:
+if uploaded_outage_file and not regions_zones.empty:
     report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
 
     if 'generate_report' not in st.session_state:
@@ -44,6 +63,10 @@ if uploaded_outage_file:
                         'Event_Count': 'Event Count',
                         'Duration': 'Duration (hours)'
                     })
+
+                    # Filter report based on the default regions and zones
+                    report = report[report[['Region', 'Zone']].apply(tuple, axis=1).isin(regions_zones.apply(tuple, axis=1))]
+
                     total_row = pd.DataFrame({
                         'Region': ['Total'],
                         'Zone': [''],
@@ -98,38 +121,40 @@ if uploaded_outage_file:
             else:
                 st.error("The required 'Site Alias' column is not found.")
 else:
-    st.warning("Please upload a valid Outage Excel file.")
-
+    if uploaded_outage_file:
+        st.warning("Regions and zones not available from the default file. Please ensure it is uploaded.")
+    else:
+        st.warning("Please upload a valid Outage Excel file.")
 
 # Section 2: RMS Site List Processing with Multiple Clients
 
 st.subheader("Client Site Count from RMS Station Status Report")
 
-# Step 1: Load the initial file from GitHub repository
-try:
-    initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
-    df_initial = pd.read_excel(initial_file_path, header=2)
-    df_initial.columns = df_initial.columns.str.strip()
+# Load the initial file from GitHub repository
+if not regions_zones.empty:
+    try:
+        initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
+        df_initial = pd.read_excel(initial_file_path, header=2)
+        df_initial.columns = df_initial.columns.str.strip()
 
-    # Process the initial file to extract client names and count by Cluster/Zone
-    if 'Site Alias' in df_initial.columns:
-        # Extract multiple clients from the 'Site Alias' column
-        df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
+        # Process the initial file to extract client names and count by Cluster/Zone
+        if 'Site Alias' in df_initial.columns:
+            df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
 
-        # Explode the dataframe for each client found
-        df_exploded = df_initial.explode('Clients')
+            # Explode the dataframe for each client found
+            df_exploded = df_initial.explode('Clients')
 
-        # Group by Client, Cluster, and Zone to count site occurrences
-        client_report_initial = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
+            # Group by Client, Cluster, and Zone to count site occurrences
+            client_report_initial = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).agg(Site_Count=('Site Alias', 'nunique')).reset_index()
 
-        # Show the initial processed data
-        st.write("Initial Client Site Count Report (from repository)")
-        st.table(client_report_initial)
-    else:
-        st.error("The required 'Site Alias' column is not found in the initial repository file.")
+            # Show the initial processed data
+            st.write("Initial Client Site Count Report (from repository)")
+            st.table(client_report_initial)
+        else:
+            st.error("The required 'Site Alias' column is not found in the initial repository file.")
 
-except FileNotFoundError:
-    st.error("Initial file not found in repository.")
+    except FileNotFoundError:
+        st.error("Initial file not found in repository.")
 
 # Step 2: Allow user to upload a new file to update
 uploaded_site_list_file = st.file_uploader("Upload new RMS Station Status Report to update", type="xlsx")
