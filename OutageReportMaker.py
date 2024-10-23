@@ -43,8 +43,8 @@ average_availability = pd.DataFrame()
 # Process the uploaded Power Availability data
 if uploaded_power_file:
     xl_power = pd.ExcelFile(uploaded_power_file)
-    if 'Site wise summary' in xl_power.sheet_names:
-        availability_df = xl_power.parse('Site wise summary', header=0)
+    if 'Site Wise Summary' in xl_power.sheet_names:  # Adjusted to match your sheet name
+        availability_df = xl_power.parse('Site Wise Summary', header=2)  # Adjusted header row
         availability_df.columns = availability_df.columns.str.strip()  # Clean column names
 
         # Check if required columns exist
@@ -60,7 +60,7 @@ if uploaded_power_file:
         else:
             st.error("The required columns are not found in the uploaded Power Availability file.")
     else:
-        st.error("The 'Site wise summary' sheet is not found in the uploaded Power Availability file.")
+        st.error("The 'Site Wise Summary' sheet is not found in the uploaded Power Availability file.")  # Adjusted error message
 
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
