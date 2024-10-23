@@ -43,13 +43,16 @@ average_availability = pd.DataFrame()
 # Process the uploaded Power Availability data
 if uploaded_power_file:
     xl_power = pd.ExcelFile(uploaded_power_file)
-    if 'Site Wise Summary' in xl_power.sheet_names:  # Adjusted to match your sheet name
-        availability_df = xl_power.parse('Site Wise Summary', header=2)  # Adjusted header row
+    if 'Site wise summary' in xl_power.sheet_names:
+        availability_df = xl_power.parse('Site wise summary', header=2)  # Adjusted to start reading from row 3
         availability_df.columns = availability_df.columns.str.strip()  # Clean column names
 
         # Check if required columns exist
-        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)']
+        required_columns = ['Zone', 'Site', 'AC Availability (%)', 'DC Availability (%)']  # Added 'Site' column
         if all(col in availability_df.columns for col in required_columns):
+            # Filter out non-KPI sites
+            availability_df = availability_df[~availability_df['Site'].str.startswith('L', na=False)]
+
             # Calculate average AC and DC availability by Zone
             average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
@@ -59,6 +62,9 @@ if uploaded_power_file:
             average_availability['Avg_DC_Availability'] = average_availability['Avg_DC_Availability'].round(2)
         else:
             st.error("The required columns are not found in the uploaded Power Availability file.")
+    else:
+        st.error("The 'Site wise summary' sheet is not found in the uploaded Power Availability file.")
+
     else:
         st.error("The 'Site Wise Summary' sheet is not found in the uploaded Power Availability file.")  # Adjusted error message
 
