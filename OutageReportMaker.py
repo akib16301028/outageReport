@@ -5,8 +5,9 @@ import numpy as np
 # Title for the app
 st.title("Outage Data Analysis")
 
-# Sidebar for Client Site Count option
+# Sidebar for Client Site Count option and Update button
 show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
+update_site_count = st.sidebar.button("Update")  # Button for updating site count
 
 # Load the default RMS Station Status Report
 try:
@@ -14,10 +15,6 @@ try:
     df_default = pd.read_excel(default_file_path, header=2)
     df_default.columns = df_default.columns.str.strip()
     if 'Site Alias' in df_default.columns:
-        # Filter out non-KPI sites (Site Alias starting with 'L')
-        df_default = df_default[~df_default['Site Alias'].str.startswith('L')]
-        
-        # Extract Clients from Site Alias
         df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
         df_default_exploded = df_default.explode('Clients')
         regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
@@ -131,7 +128,7 @@ if uploaded_previous_file:
         st.error("The 'Report Summary' sheet is not found.")
 
 # Sidebar option to show client-wise site table
-if show_client_site_count:
+if show_client_site_count or update_site_count:  # Trigger client-site count update with button click
     st.subheader("Client Site Count from RMS Station Status Report")
     if not regions_zones.empty:
         client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
@@ -144,27 +141,3 @@ if show_client_site_count:
             st.write(f"### {client}:")
             st.table(client_table)
             st.write(f"**Total for {client}:** {total_count}")
-
-# Upload new RMS Station Status Report to update
-uploaded_site_list_file = st.file_uploader("Upload new RMS Station Status Report to update", type="xlsx")
-
-if uploaded_site_list_file:
-    df_uploaded = pd.read_excel(uploaded_site_list_file, header=2)
-    df_uploaded.columns = df_uploaded.columns.str.strip()
-
-    if 'Site Alias' in df_uploaded.columns:
-        # Filter out non-KPI sites (Site Alias starting with 'L')
-        df_uploaded = df_uploaded[~df_uploaded['Site Alias'].str.startswith('L')]
-
-        # Extract Clients from Site Alias
-        df_uploaded['Clients'] = df_uploaded['Site Alias'].str.extract(r'\((.*?)\)')
-        df_uploaded_exploded = df_uploaded.explode('Clients')
-
-        # Group by Client, Cluster, and Zone to count site occurrences
-        client_report_uploaded = df_uploaded_exploded.groupby(['Clients', 'Cluster', 'Zone']).agg(
-            Site_Count=('Site Alias', 'nunique')
-        ).reset_index()
-
-        # Show the updated data
-        st.write("Updated Client Site Count Report")
-        st.table(client_report_uploaded)
