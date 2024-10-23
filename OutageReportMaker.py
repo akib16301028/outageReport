@@ -32,8 +32,7 @@ uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file
 uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx", key="previous_uploader")
 
 # Process Data only if all files are uploaded
-if uploaded_outage_file and uploaded_previous_file and show_client_wise:
-
+if uploaded_outage_file and uploaded_previous_file:
     # Display client-wise total site count if requested
     if show_client_wise and not regions_zones.empty:
         st.subheader("Client Wise Total Site Count")
@@ -131,7 +130,7 @@ if uploaded_outage_file and uploaded_previous_file and show_client_wise:
                     st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     st.success("Report generated and ready to download!")
             else:
-                st.error("The required 'Site Alias' column is not found.")
+                st.error("The required 'Site Alias' column is not found in the outage data.")
 
     # Load Previous Outage Data and Map Redeem Hours
     st.subheader("Upload Previous Outage Data")
@@ -185,4 +184,4 @@ if uploaded_outage_file and uploaded_previous_file and show_client_wise:
                 else:
                     st.error(f"No data available for the client '{selected_client}'")
             else:
-                st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are
+                st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found in the previous outage data.")
