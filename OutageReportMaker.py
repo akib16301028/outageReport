@@ -29,7 +29,11 @@ except FileNotFoundError:
 # Load Previous Outage Data and Map Redeem Hours
 st.subheader("Upload Previous Outage Data")
 
-uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
+uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx", key="previous_outage_file")
+
+# Initialize session state for storing reports
+if 'previous_data' not in st.session_state:
+    st.session_state.previous_data = None
 
 if uploaded_previous_file:
     xl_previous = pd.ExcelFile(uploaded_previous_file)
@@ -69,14 +73,8 @@ if uploaded_previous_file:
                 st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
                 st.table(pivot_elapsed_time)
 
-                # Now map the elapsed time into the outage report table
-                if selected_client in reports:
-                    report = reports[selected_client]
-                    report = pd.merge(report, pivot_elapsed_time, how='left', on='Zone')
-                    report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
-                    report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
-                    st.write(f"Updated report for {selected_client} with Total Redeem Hours:")
-                    st.table(report)
+                # Store the previous data in session state
+                st.session_state.previous_data = df_previous
             else:
                 st.error(f"No data available for the client '{selected_client}'")
         else:
@@ -86,18 +84,21 @@ if uploaded_previous_file:
 
 # Upload Outage Data
 st.subheader("Upload Outage Data")
-uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
+uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx", key="outage_file")
+
+# Initialize session state for reports if not present
+if 'reports' not in st.session_state:
+    st.session_state.reports = {}
+if 'report_generated' not in st.session_state:
+    st.session_state.report_generated = False
 
 if uploaded_outage_file and not regions_zones.empty:
     report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
 
-    if 'generate_report' not in st.session_state:
-        st.session_state.generate_report = False
-
     if st.button("Generate Report"):
-        st.session_state.generate_report = True
+        st.session_state.report_generated = True
     
-    if st.session_state.generate_report:
+    if st.session_state.report_generated:
         xl = pd.ExcelFile(uploaded_outage_file)
         if 'RMS Alarm Elapsed Report' in xl.sheet_names:
             df = xl.parse('RMS Alarm Elapsed Report', header=2)
@@ -138,11 +139,10 @@ if uploaded_outage_file and not regions_zones.empty:
                     return report
 
                 clients = np.append('All', df['Client'].unique())
-                reports = {}
                 for client in df['Client'].unique():
                     client_df = df[df['Client'] == client]
                     report = generate_report(client_df, client)
-                    reports[client] = report
+                    st.session_state.reports[client] = report
 
                 selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
 
@@ -153,15 +153,14 @@ if uploaded_outage_file and not regions_zones.empty:
                         unsafe_allow_html=True
                     )
                     report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
-                    st.table(report)
                     return report
 
                 if selected_client == 'All':
                     for client in df['Client'].unique():
-                        report = reports[client]
+                        report = st.session_state.reports[client]
                         display_table(client, report)
                 else:
-                    report = reports[selected_client]
+                    report = st.session_state.reports[selected_client]
                     display_table(selected_client, report)
 
                 # Function to convert to excel
@@ -169,7 +168,7 @@ if uploaded_outage_file and not regions_zones.empty:
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                         df.to_excel(writer, sheet_name='Original Data', index=False)
-                        for client, report in reports.items():
+                        for client, report in st.session_state.reports.items():
                             report.to_excel(writer, sheet_name=f'{client} Report', index=False)
                     output.seek(0)
                     return output
