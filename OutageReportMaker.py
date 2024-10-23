@@ -173,11 +173,30 @@ if uploaded_previous_file:
 # Sidebar option to show client-wise site table
 if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
     st.subheader("Client Site Count from RMS Station Status Report")
+
+    # Add a filter for client names
+    client_filter_option = st.sidebar.selectbox(
+        "Select a Client to view Site Count",
+        options=["All"] + list(df_default_exploded['Clients'].unique())
+    )
+
+    # Checkbox for including both KPI and non-KPI sites
+    show_non_kpi = st.sidebar.checkbox("Show Non-KPI Sites (Sites starting with 'L')", value=False)
+
     if not regions_zones.empty:
         client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+
+        # Filter client site count based on selection
+        if client_filter_option != "All":
+            client_site_count = client_site_count[client_site_count['Clients'] == client_filter_option]
+
+        # Exclude non-KPI sites by default
+        if not show_non_kpi:
+            client_site_count = client_site_count[~client_site_count['Cluster'].str.startswith('L')]
+
         unique_clients = client_site_count['Clients'].unique()
 
-        # Display the site count table when checkbox is clicked or update button is triggered
+        # Display the site count table
         for client in unique_clients:
             client_table = client_site_count[client_site_count['Clients'] == client]
             st.write(f"### {client}")
