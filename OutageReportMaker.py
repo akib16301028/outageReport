@@ -96,13 +96,14 @@ if uploaded_outage_file and not regions_zones.empty:
                     st.table(report)
                     return report
 
-                if selected_client == 'All':
-                    for client in df['Client'].unique():
-                        report = reports[client]
-                        display_table(client, report)
-                else:
-                    report = reports[selected_client]
-                    display_table(selected_client, report)
+                # Only uncomment to show the report when needed
+                # if selected_client == 'All':
+                #     for client in df['Client'].unique():
+                #         report = reports[client]
+                #         display_table(client, report)
+                # else:
+                #     report = reports[selected_client]
+                #     display_table(selected_client, report)
 
                 # Function to convert to excel
                 def to_excel():
@@ -114,11 +115,12 @@ if uploaded_outage_file and not regions_zones.empty:
                     output.seek(0)
                     return output
 
-                if st.button("Download Report"):
-                    output = to_excel()
-                    file_name = f"SC wise {selected_client} Site Outage Status on {report_date}.xlsx"
-                    st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    st.success("Report generated and ready to download!")
+                # Commented out the download button
+                # if st.button("Download Report"):
+                #     output = to_excel()
+                #     file_name = f"SC wise {selected_client} Site Outage Status on {report_date}.xlsx"
+                #     st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                #     st.success("Report generated and ready to download!")
             else:
                 st.error("The required 'Site Alias' column is not found.")
 
@@ -157,11 +159,11 @@ if uploaded_previous_file:
             df_filtered = df_previous[df_previous['Tenant'] == selected_client]
 
             if not df_filtered.empty:
-                st.write(f"Showing data for Client: {selected_client}")
+                # st.write(f"Showing data for Client: {selected_client}")
                 pivot_elapsed_time = df_filtered.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
                 pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
-                st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
-                st.table(pivot_elapsed_time)
+                # st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
+                # st.table(pivot_elapsed_time)
 
                 # Now map the elapsed time into the outage report table
                 if selected_client in reports:
@@ -200,14 +202,13 @@ if show_client_site_count:
                 client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
 
                 # Option to update the Client Site Count
-                if st.button("Update Client Site Count"):
-                    # Reprocess the data
-                    updated_client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-                    st.success("Client Site Count updated!")
-                    st.table(updated_client_site_count)
+                # if st.button("Update Client Site Count"):
+                #     updated_client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+                #     st.success("Client Site Count updated!")
+                #     st.table(updated_client_site_count)
 
-                st.write("Client Site Count Table:")
-                st.table(client_site_count)
+                # st.write("Client Site Count Table:")
+                # st.table(client_site_count)
             else:
                 st.error("The required 'Site Alias' column is not found in the initial file.")
         except FileNotFoundError:
