@@ -22,6 +22,14 @@ except FileNotFoundError:
     st.error("Default file not found.")
     regions_zones = pd.DataFrame()  
 
+# Option to display the client-wise site table
+if st.checkbox("Show Client Wise Total Site Count"):
+    if not regions_zones.empty:
+        st.subheader("Client Wise Total Site Count")
+        st.table(df_default_exploded[['Cluster', 'Zone', 'Clients']])  # Displaying the client-wise site count
+    else:
+        st.warning("No data available to display client-wise total site count.")
+
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
@@ -63,7 +71,7 @@ if uploaded_outage_file and not regions_zones.empty:
                     ).reset_index()
                     report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
                     report = report.fillna(0)
-                    report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))
+                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: round(x, 2))
 
                     report = report.rename(columns={
                         'Cluster': 'Region',
@@ -176,37 +184,3 @@ if uploaded_previous_file:
             st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
     else:
         st.error("The 'Report Summary' sheet is not found.")
-
-# Section for Client Site Count from RMS Station Status Report
-st.subheader("Client Site Count from RMS Station Status Report")
-
-# Load the initial file from the repository for Client Site Count
-if not regions_zones.empty:
-    try:
-        initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
-        df_initial = pd.read_excel(initial_file_path, header=2)
-        df_initial.columns = df_initial.columns.str.strip()
-
-        # Process the initial file to extract client names and count by Cluster/Zone
-        if 'Site Alias' in df_initial.columns:
-            df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
-
-            # Explode the dataframe for each client found
-            df_exploded = df_initial.explode('Clients')
-
-            # Group by Client, Cluster, and Zone
-            client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-
-            # Option to update the Client Site Count
-            if st.button("Update Client Site Count"):
-                # Reprocess the data
-                updated_client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-                st.success("Client Site Count updated!")
-                st.table(updated_client_site_count)
-
-            st.write("Client Site Count Table:")
-            st.table(client_site_count)
-        else:
-            st.error("The required 'Site Alias' column is not found in the initial file.")
-    except FileNotFoundError:
-        st.error("Initial file not found.")
