@@ -163,7 +163,7 @@ if show_client_site_count:
                     })
 
                     # Show the total before the table
-                    st.write(f"Client Site Count Table for {client}:")
+                    st.write(f"### {client}:")
                     st.table(total_display)  # Display total at the top
                     st.table(client_table)     # Display client site count table
 
