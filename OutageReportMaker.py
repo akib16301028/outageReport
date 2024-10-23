@@ -10,7 +10,7 @@ show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS St
 
 # Load the default RMS Station Status Report
 try:
-    default_file_path = "RMS Station Status Report.xlsx"
+    default_file_path = "RMS Station Status Report.xlsx"  
     df_default = pd.read_excel(default_file_path, header=2)
     df_default.columns = df_default.columns.str.strip()
     if 'Site Alias' in df_default.columns:
@@ -19,10 +19,10 @@ try:
         regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
     else:
         st.error("The required 'Site Alias' column is not found in the default file.")
-        regions_zones = pd.DataFrame()
+        regions_zones = pd.DataFrame() 
 except FileNotFoundError:
     st.error("Default file not found.")
-    regions_zones = pd.DataFrame()
+    regions_zones = pd.DataFrame()  
 
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
@@ -81,7 +81,7 @@ uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel
 
 if uploaded_previous_file:
     xl_previous = pd.ExcelFile(uploaded_previous_file)
-
+    
     if 'Report Summary' in xl_previous.sheet_names:
         df_previous = xl_previous.parse('Report Summary', header=2)
         df_previous.columns = df_previous.columns.str.strip()
@@ -131,15 +131,14 @@ if uploaded_previous_file:
 if show_client_site_count:
     st.subheader("Client Site Count from RMS Station Status Report")
 
-    # Upload new RMS Station Status Report
-    uploaded_report_file = st.file_uploader("Upload a new RMS Station Status Report", type="xlsx", key="report_uploader")
-
-    if uploaded_report_file is not None:
+    # Load the initial file from the repository for Client Site Count
+    if not regions_zones.empty:
         try:
-            df_initial = pd.read_excel(uploaded_report_file, header=2)
+            initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
+            df_initial = pd.read_excel(initial_file_path, header=2)
             df_initial.columns = df_initial.columns.str.strip()
 
-            # Process the uploaded file to extract client names and count by Cluster/Zone
+            # Process the initial file to extract client names and count by Cluster/Zone
             if 'Site Alias' in df_initial.columns:
                 df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
 
@@ -156,19 +155,27 @@ if show_client_site_count:
                 for client in unique_clients:
                     client_table = client_site_count[client_site_count['Clients'] == client]
                     total_count = client_table['Site Count'].sum()
-
-                    # Create a DataFrame for displaying client name and total
-                    total_display = pd.DataFrame({
-                        'Client Name': [client],
-                        'Total': [total_count]
-                    })
-
-                    # Show the total before the table
-                    st.write(f"Client Site Count Table for {client}:")
-                    st.table(total_display)  # Display total at the top
-                    st.table(client_table)     # Display client site count table
+                    
+                    # Display total count for the client first
+                    st.write(f"**Client: {client}**")
+                    st.write(f"**Total: {total_count}**")
+                    st.table(client_table)
 
             else:
-                st.error("The required 'Site Alias' column is not found in the uploaded file.")
+                st.error("The required 'Site Alias' column is not found in the initial file.")
         except FileNotFoundError:
-            st.error("Uploaded file not found.")
+            st.error("Initial file not found.")
+
+# Option to upload a new RMS Station Status Report
+st.subheader("Optional: Upload a New RMS Station Status Report")
+uploaded_new_report_file = st.file_uploader("Please upload a new RMS Station Status Report file", type="xlsx")
+
+if uploaded_new_report_file:
+    try:
+        df_new_report = pd.read_excel(uploaded_new_report_file, header=2)
+        df_new_report.columns = df_new_report.columns.str.strip()
+        # Process the new report similar to the existing one
+        # You can add additional processing logic here if needed
+        st.success("New RMS Station Status Report uploaded successfully.")
+    except Exception as e:
+        st.error(f"Error uploading new RMS Station Status Report: {e}")
