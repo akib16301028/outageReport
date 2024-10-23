@@ -5,16 +5,9 @@ import numpy as np
 # Title for the app
 st.title("Outage Data Analysis")
 
-# Initialize session state for the update button
-if 'update_triggered' not in st.session_state:
-    st.session_state['update_triggered'] = False
-
-# Sidebar for Client Site Count option and Update button
+# Sidebar for Client Site Count option
 show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
-
-# Button for updating site count
-if st.sidebar.button("Update"):
-    st.session_state['update_triggered'] = True
+update_button = st.sidebar.button("Update Client Site Count")
 
 # Load the default RMS Station Status Report
 try:
@@ -53,7 +46,7 @@ if uploaded_outage_file and not regions_zones.empty:
             reports = {}
             for client in df['Client'].unique():
                 client_df = df[df['Client'] == client]
-                relevant_zones = df_default[df_default['Site Alias'].str.contains(client)]
+                relevant_zones = df_default[df_default['Site Alias'].str.contains(client) & ~df_default['Site Alias'].str.startswith('L')]
                 relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
                 full_report = relevant_regions_zones.copy()
                 client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
@@ -100,9 +93,10 @@ if uploaded_previous_file:
             df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
 
             clients = df_previous['Tenant'].unique()
-            selected_client = st.selectbox("Select a Client (Tenant)", clients)
+            clients_with_all = np.append(clients, 'All')  # Add 'All' option
+            selected_client = st.selectbox("Select a Client (Tenant)", clients_with_all)
 
-            df_filtered = df_previous[df_previous['Tenant'] == selected_client]
+            df_filtered = df_previous[df_previous['Tenant'] == selected_client] if selected_client != 'All' else df_previous
 
             if not df_filtered.empty:
                 # Pivot table to get total redeemed hours per zone
@@ -110,15 +104,25 @@ if uploaded_previous_file:
                 pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
 
                 # Merge the reports with the previous redeemed hours
-                if selected_client in reports:
-                    report = reports[selected_client]
+                if selected_client in reports or selected_client == 'All':
+                    if selected_client == 'All':
+                        combined_report = pd.concat(reports.values())
+                        combined_report = combined_report.groupby(['Region', 'Zone'], as_index=False).agg(
+                            Site_Count=('Site Count', 'sum'),
+                            Duration=('Duration (hours)', 'sum'),
+                            Event_Count=('Event Count', 'sum')
+                        )
+                        report = combined_report
+                    else:
+                        report = reports[selected_client]
+
                     report = pd.merge(report, pivot_elapsed_time, how='left', on='Zone')
                     report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
                     report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
 
                     # Merge with Client Site Count
                     client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-                    client_table = client_site_count[client_site_count['Clients'] == selected_client]
+                    client_table = client_site_count[client_site_count['Clients'] == selected_client] if selected_client != 'All' else client_site_count
                     merged_report = pd.merge(report, client_table, how='left', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
                     merged_report = merged_report.drop(columns=['Cluster', 'Clients'])
                     merged_report = merged_report.fillna(0)
@@ -135,16 +139,25 @@ if uploaded_previous_file:
         st.error("The 'Report Summary' sheet is not found.")
 
 # Sidebar option to show client-wise site table
-if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
+if show_client_site_count:
     st.subheader("Client Site Count from RMS Station Status Report")
     if not regions_zones.empty:
         client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
         unique_clients = client_site_count['Clients'].unique()
 
-        # Display the site count table when checkbox is clicked or update button is triggered
+        # Display the site count table when checkbox is clicked
         for client in unique_clients:
             client_table = client_site_count[client_site_count['Clients'] == client]
             total_count = client_table['Site Count'].sum()
             st.write(f"### {client}:")
             st.table(client_table)
             st.write(f"**Total for {client}:** {total_count}")
+
+# Update Client Site Count button functionality
+if update_button:
+    if not regions_zones.empty:
+        client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+        st.success("Client Site Count updated successfully!")
+        st.table(client_site_count)
+    else:
+        st.error("No data available to update client site count.")
