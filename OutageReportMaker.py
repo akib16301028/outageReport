@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import io
 
 # Title for the app
 st.title("Outage Data Analysis")
@@ -13,8 +14,6 @@ try:
     default_file_path = "RMS Station Status Report.xlsx"  
     df_default = pd.read_excel(default_file_path, header=2)
     df_default.columns = df_default.columns.str.strip()
-
-    # Extract Clients from Site Alias
     if 'Site Alias' in df_default.columns:
         df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
         df_default_exploded = df_default.explode('Clients')
@@ -76,65 +75,9 @@ if uploaded_outage_file and not regions_zones.empty:
                 report = generate_report(client_df, client)
                 reports[client] = report
 
-# Section for Client Site Count from RMS Station Status Report
-if show_client_site_count:
-    st.subheader("Client Site Count from RMS Station Status Report")
-
-    # Load the initial file from the repository for Client Site Count
-    if not regions_zones.empty:
-        try:
-            initial_file_path = "RMS Station Status Report.xlsx"  
-            df_initial = pd.read_excel(initial_file_path, header=2)
-            df_initial.columns = df_initial.columns.str.strip()
-
-            # Process the initial file to extract client names and count by Cluster/Zone
-            if 'Site Alias' in df_initial.columns:
-                df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
-
-                # Explode the dataframe for each client found
-                df_exploded = df_initial.explode('Clients')
-
-                # Group by Client, Cluster, and Zone
-                client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-
-                # Get unique clients
-                unique_clients = client_site_count['Clients'].unique()
-
-                # Display separate tables for each client
-                for client in unique_clients:
-                    client_table = client_site_count[client_site_count['Clients'] == client]
-                    total_count = client_table['Site Count'].sum()
-
-                    # Add the total count at the beginning
-                    st.write(f"**Client Site Count Table for {client}:**")
-                    st.write(f"**Total Site Count for {client}:** {total_count}")
-                    st.table(client_table)
-
-            else:
-                st.error("The required 'Site Alias' column is not found in the initial file.")
-        except FileNotFoundError:
-            st.error("Initial file not found.")
-
-# Optional section: Upload a new RMS Station Status Report
-st.subheader("Optional: Upload a New RMS Station Status Report")
-uploaded_rms_file = st.file_uploader("Upload a new RMS Station Status Report", type="xlsx")
-
-if uploaded_rms_file:
-    df_uploaded_rms = pd.read_excel(uploaded_rms_file, header=2)
-    df_uploaded_rms.columns = df_uploaded_rms.columns.str.strip()
-
-    if 'Site Alias' in df_uploaded_rms.columns:
-        df_uploaded_rms['Clients'] = df_uploaded_rms['Site Alias'].str.findall(r'\((.*?)\)')
-        df_uploaded_rms_exploded = df_uploaded_rms.explode('Clients')
-
-        # Merge with the previously generated reports
-        for client in df_uploaded_rms_exploded['Clients'].unique():
-            st.write(f"Updated RMS report for {client}")
-            # Process similar to the initial file upload or further actions
-            st.table(df_uploaded_rms_exploded[df_uploaded_rms_exploded['Clients'] == client])
-
-# Load Previous Outage Data and Map Redeem Hours
+# Upload Previous Outage Data and Map Redeem Hours
 st.subheader("Upload Previous Outage Data")
+
 uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
 
 if uploaded_previous_file:
@@ -170,26 +113,51 @@ if uploaded_previous_file:
                 pivot_elapsed_time = df_filtered.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
                 pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
 
-                # Now map the elapsed time into the outage report table
+                # Map the elapsed time into the outage report table
                 if selected_client in reports:
                     report = reports[selected_client]
                     report = pd.merge(report, pivot_elapsed_time, how='left', on='Zone')
                     report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
                     report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
 
-                    # Merging Client Site Count with Updated report
-                    client_site_count_filtered = client_site_count[client_site_count['Clients'] == selected_client]
-                    merged_report = pd.merge(report, client_site_count_filtered, how='outer', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
+                    # Client site count processing and merging
+                    show_update_button = st.sidebar.checkbox("Optional: Upload a New RMS Station Status Report")
 
-                    merged_report = merged_report[['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count', 'Total Redeem Hours']]
-                    merged_report['Total Site Count'] = merged_report['Site Count_y'].fillna(0)
-                    merged_report = merged_report.drop(columns=['Site Count_y'])
+                    if show_client_site_count:
+                        st.subheader("Client Site Count from RMS Station Status Report")
+                        if not regions_zones.empty:
+                            client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+                            unique_clients = client_site_count['Clients'].unique()
 
-                    st.write(f"Final Merged Report for {selected_client}:")
-                    st.table(merged_report)
+                            for client in unique_clients:
+                                client_table = client_site_count[client_site_count['Clients'] == client]
+                                total_count = client_table['Site Count'].sum()
+                                st.write(f"Client Site Count Table for {client}:")
+                                st.table(client_table)
+                                st.write(f"**Total for {client}:** {total_count}")
+
+                                # Merging the client site count with the current report
+                                merged_report = pd.merge(report, client_table, how='left', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
+                                merged_report = merged_report.drop(columns=['Cluster', 'Clients'])
+                                merged_report = merged_report.fillna(0)
+                                merged_report = merged_report.rename(columns={'Site Count_x': 'Site Count', 'Site Count_y': 'Total Site Count'})
+                                merged_report['Total Site Count'] = merged_report['Total Site Count'].astype(int)
+                                
+                                st.write(f"Merged Report for {client}:")
+                                st.table(merged_report)
+                    
+                    if show_update_button:
+                        uploaded_new_rms = st.file_uploader("Upload a New RMS Station Status Report", type="xlsx")
+                        if uploaded_new_rms:
+                            df_new_rms = pd.read_excel(uploaded_new_rms, header=2)
+                            st.success("New RMS Station Status Report uploaded successfully.")
             else:
                 st.error(f"No data available for the client '{selected_client}'")
         else:
             st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
     else:
-        st.error("The 'Report Summary' sheet is not found in the uploaded Previous Outage Data.")
+        st.error("The 'Report Summary' sheet is not found.")
+
+# Optional: Add a button for updating client-wise site status
+if st.sidebar.button("Update Client Site Status"):
+    st.sidebar.write("Client site status updated based on the uploaded file.")
