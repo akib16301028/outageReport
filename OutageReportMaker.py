@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
 
 # Title for the app
 st.title("Outage Data Analysis")
@@ -28,32 +27,6 @@ except FileNotFoundError:
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
-def generate_report(client_df, selected_client):
-    relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
-    if relevant_zones.empty:
-        return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
-
-    relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
-    full_report = relevant_regions_zones.copy()
-    client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
-        Site_Count=('Site Alias', 'nunique'),
-        Duration=('Duration (hours)', 'sum'),
-        Event_Count=('Site Alias', 'count')
-    ).reset_index()
-
-    report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
-    report = report.fillna(0)
-    report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))
-
-    report = report.rename(columns={
-        'Cluster': 'Region',
-        'Site_Count': 'Site Count',
-        'Event_Count': 'Event Count',
-        'Duration': 'Duration (hours)'
-    })
-
-    return report
-
 if uploaded_outage_file and not regions_zones.empty:
     xl = pd.ExcelFile(uploaded_outage_file)
     if 'RMS Alarm Elapsed Report' in xl.sheet_names:
@@ -68,13 +41,27 @@ if uploaded_outage_file and not regions_zones.empty:
             df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
             df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
-            clients = np.append('All', df['Client'].unique())
+            # Generate client reports
             reports = {}
-
-            # Generate reports for each client immediately
             for client in df['Client'].unique():
                 client_df = df[df['Client'] == client]
-                report = generate_report(client_df, client)
+                relevant_zones = df_default[df_default['Site Alias'].str.contains(client)]
+                relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
+                full_report = relevant_regions_zones.copy()
+                client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
+                    Site_Count=('Site Alias', 'nunique'),
+                    Duration=('Duration (hours)', 'sum'),
+                    Event_Count=('Site Alias', 'count')
+                ).reset_index()
+                report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
+                report = report.fillna(0)
+                report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))
+                report = report.rename(columns={
+                    'Cluster': 'Region',
+                    'Site_Count': 'Site Count',
+                    'Event_Count': 'Event Count',
+                    'Duration': 'Duration (hours)'
+                })
                 reports[client] = report
 
 # Upload Previous Outage Data and Map Redeem Hours
@@ -84,13 +71,14 @@ uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel
 
 if uploaded_previous_file:
     xl_previous = pd.ExcelFile(uploaded_previous_file)
-
+    
     if 'Report Summary' in xl_previous.sheet_names:
         df_previous = xl_previous.parse('Report Summary', header=2)
         df_previous.columns = df_previous.columns.str.strip()
 
         if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
             
+            # Convert elapsed time to hours
             def convert_to_hours(elapsed_time):
                 try:
                     total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
@@ -100,10 +88,7 @@ if uploaded_previous_file:
                     return 0
 
             df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
-            tenant_map = {
-                'Grameenphone': 'GP', 'Banglalink': 'BL', 'Robi': 'ROBI', 'Banjo': 'BANJO'
-            }
-
+            tenant_map = {'Grameenphone': 'GP', 'Banglalink': 'BL', 'Robi': 'ROBI', 'Banjo': 'BANJO'}
             df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
 
             clients = df_previous['Tenant'].unique()
@@ -112,18 +97,28 @@ if uploaded_previous_file:
             df_filtered = df_previous[df_previous['Tenant'] == selected_client]
 
             if not df_filtered.empty:
+                # Pivot table to get total redeemed hours per zone
                 pivot_elapsed_time = df_filtered.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
                 pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
 
-                # Show the Merged Report immediately after file upload
+                # Merge the reports with the previous redeemed hours
                 if selected_client in reports:
                     report = reports[selected_client]
                     report = pd.merge(report, pivot_elapsed_time, how='left', on='Zone')
                     report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
                     report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
 
+                    # Merge with Client Site Count
+                    client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+                    client_table = client_site_count[client_site_count['Clients'] == selected_client]
+                    merged_report = pd.merge(report, client_table, how='left', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
+                    merged_report = merged_report.drop(columns=['Cluster', 'Clients'])
+                    merged_report = merged_report.fillna(0)
+                    merged_report['Total Site Count'] = merged_report['Site Count_y'].fillna(0).astype(int)
+
+                    # Display the final merged report
                     st.write(f"Merged Report for {selected_client}:")
-                    st.table(report)
+                    st.table(merged_report)
             else:
                 st.error(f"No data available for the client '{selected_client}'")
         else:
@@ -138,7 +133,7 @@ if show_client_site_count:
         client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
         unique_clients = client_site_count['Clients'].unique()
 
-        # Only display the site count table when the checkbox is clicked
+        # Display the site count table when checkbox is clicked
         for client in unique_clients:
             client_table = client_site_count[client_site_count['Clients'] == client]
             total_count = client_table['Site Count'].sum()
