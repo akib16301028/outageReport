@@ -1,9 +1,13 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import io
 
 # Title for the app
 st.title("Outage Data Analysis")
+
+# Sidebar for Client Site Count option
+show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
 
 # Load the default RMS Station Status Report
 try:
@@ -71,13 +75,6 @@ if uploaded_outage_file and not regions_zones.empty:
                 report = generate_report(client_df, client)
                 reports[client] = report
 
-            # Merge all reports into one
-            merged_report = pd.concat(reports.values()).drop_duplicates().reset_index(drop=True)
-
-            # Display the merged report initially
-            st.subheader("Merged Report")
-            st.table(merged_report)
-
 # Upload Previous Outage Data and Map Redeem Hours
 st.subheader("Upload Previous Outage Data")
 
@@ -123,17 +120,37 @@ if uploaded_previous_file:
                     report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
                     report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
 
-                    # Merging the report with client site counts
-                    client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-                    merged_report = pd.merge(report, client_site_count, how='left', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
-                    merged_report = merged_report.drop(columns=['Cluster', 'Clients'])
-                    merged_report = merged_report.fillna(0)
-                    merged_report['Total Site Count'] = merged_report['Total Site Count'].astype(int)
+                    # Client site count processing and merging
+                    show_update_button = st.sidebar.checkbox("Optional: Upload a New RMS Station Status Report")
 
-                    st.write(f"Merged Report for {selected_client}:")
-                    st.table(merged_report)
-                else:
-                    st.error(f"No report found for the client '{selected_client}'")
+                    if show_client_site_count:
+                        st.subheader("Client Site Count from RMS Station Status Report")
+                        if not regions_zones.empty:
+                            client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+                            unique_clients = client_site_count['Clients'].unique()
+
+                            for client in unique_clients:
+                                client_table = client_site_count[client_site_count['Clients'] == client]
+                                total_count = client_table['Site Count'].sum()
+                                st.write(f"Client Site Count Table for {client}:")
+                                st.table(client_table)
+                                st.write(f"**Total for {client}:** {total_count}")
+
+                                # Merging the client site count with the current report
+                                merged_report = pd.merge(report, client_table, how='left', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
+                                merged_report = merged_report.drop(columns=['Cluster', 'Clients'])
+                                merged_report = merged_report.fillna(0)
+                                merged_report = merged_report.rename(columns={'Site Count_x': 'Site Count', 'Site Count_y': 'Total Site Count'})
+                                merged_report['Total Site Count'] = merged_report['Total Site Count'].astype(int)
+                                
+                                st.write(f"Merged Report for {client}:")
+                                st.table(merged_report)
+                    
+                    if show_update_button:
+                        uploaded_new_rms = st.file_uploader("Upload a New RMS Station Status Report", type="xlsx")
+                        if uploaded_new_rms:
+                            df_new_rms = pd.read_excel(uploaded_new_rms, header=2)
+                            st.success("New RMS Station Status Report uploaded successfully.")
             else:
                 st.error(f"No data available for the client '{selected_client}'")
         else:
