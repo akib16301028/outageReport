@@ -11,8 +11,6 @@ if 'update_triggered' not in st.session_state:
 
 # Sidebar for Client Site Count option and Update button
 show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
-kpi_filter = st.sidebar.selectbox("Select Site Type", ["All", "KPI", "Non-KPI"])
-client_filter = st.sidebar.selectbox("Select Client", ["All"])  # Placeholder for client filter
 
 # Button for updating site count
 if st.sidebar.button("Update"):
@@ -44,16 +42,18 @@ average_availability = pd.DataFrame()
 # Process the uploaded Power Availability data
 if uploaded_power_file:
     xl_power = pd.ExcelFile(uploaded_power_file)
-    if 'Site wise summary' in xl_power.sheet_names:
-        availability_df = xl_power.parse('Site wise summary', header=2)
+    if 'Site Wise Summary' in xl_power.sheet_names:
+        availability_df = xl_power.parse('Site Wise Summary', header=2)
         availability_df.columns = availability_df.columns.str.strip()  # Clean column names
 
         # Check if required columns exist
-        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)']
+        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']
         if all(col in availability_df.columns for col in required_columns):
-            # Calculate average AC and DC availability by Zone, ignoring non-KPI sites
-            filtered_availability = availability_df[~availability_df['Site'].str.startswith('L')]
-            average_availability = filtered_availability.groupby('Zone').agg(
+            # Exclude non-KPI sites starting with 'L'
+            availability_df = availability_df[~availability_df['Site'].str.startswith('L')]
+
+            # Calculate average AC and DC availability by Zone
+            average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
                 Avg_DC_Availability=('DC Availability (%)', 'mean')
             ).reset_index()
@@ -62,7 +62,7 @@ if uploaded_power_file:
         else:
             st.error("The required columns are not found in the uploaded Power Availability file.")
     else:
-        st.error("The 'Site wise summary' sheet is not found in the uploaded Power Availability file.")
+        st.error("The 'Site Wise Summary' sheet is not found in the uploaded Power Availability file.")
 
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
@@ -132,11 +132,9 @@ if uploaded_previous_file:
             df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
 
             clients = df_previous['Tenant'].unique()
-            client_filter = st.selectbox("Select a Client (Tenant)", ["All"] + clients.tolist())
+            selected_client = st.selectbox("Select a Client (Tenant)", clients)
 
-            df_filtered = df_previous
-            if client_filter != "All":
-                df_filtered = df_previous[df_previous['Tenant'] == client_filter]
+            df_filtered = df_previous[df_previous['Tenant'] == selected_client]
 
             if not df_filtered.empty:
                 # Pivot table to get total redeemed hours per zone
@@ -144,82 +142,45 @@ if uploaded_previous_file:
                 pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
 
                 # Merge the reports with the previous redeemed hours
-                if client_filter in reports:
-                    report = reports[client_filter] if client_filter != "All" else pd.concat(reports.values())
+                if selected_client in reports:
+                    report = reports[selected_client]
                     report = pd.merge(report, pivot_elapsed_time, how='left', on='Zone')
                     report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
                     report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
 
                     # Merge with Client Site Count
                     client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-                    client_table = client_site_count.copy()
-
-                    # Apply KPI/non-KPI filter
-                    if kpi_filter == "KPI":
-                        client_table = client_table[~client_table['Clients'].str.startswith('L')]
-                    elif kpi_filter == "Non-KPI":
-                        client_table = client_table[client_table['Clients'].str.startswith('L')]
-
-                    if client_filter != "All":
-                        client_table = client_table[client_table['Clients'] == client_filter]
-
+                    client_table = client_site_count[client_site_count['Clients'] == selected_client]
                     merged_report = pd.merge(report, client_table, how='left', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
                     merged_report = merged_report.drop(columns=['Cluster', 'Clients'])
                     merged_report = merged_report.fillna(0)
                     merged_report['Total Site Count'] = merged_report['Site Count_y'].fillna(0).astype(int)
 
+                    # Merge with Average Power Availability
+                    if not average_availability.empty:
+                        merged_report = pd.merge(merged_report, average_availability, how='left', on='Zone')
+
                     # Display the final merged report
-                    st.write(f"Merged Report for {client_filter}:")
+                    st.write(f"Merged Report for {selected_client}:")
                     st.table(merged_report)
             else:
-                st.error(f"No data available for the client '{client_filter}'")
+                st.error(f"No data available for the client '{selected_client}'")
         else:
             st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
     else:
         st.error("The 'Report Summary' sheet is not found.")
 
 # Sidebar option to show client-wise site table
-if show_client_site_count or st.session_state['update_triggered']:
-    st.subheader("Client Site Counts")
-    
-    # Create a summary table based on the selected filters
-    if 'Clients' in df_default_exploded.columns:
-        # Count the total sites by client
+if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
+    st.subheader("Client Site Count from RMS Station Status Report")
+    if not regions_zones.empty:
         client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-        
-        # Apply KPI/non-KPI filter
-        if kpi_filter == "KPI":
-            client_site_count = client_site_count[~client_site_count['Clients'].str.startswith('L')]
-        elif kpi_filter == "Non-KPI":
-            client_site_count = client_site_count[client_site_count['Clients'].str.startswith('L')]
+        unique_clients = client_site_count['Clients'].unique()
 
-        # Further filter by client if selected
-        if client_filter != "All":
-            client_site_count = client_site_count[client_site_count['Clients'] == client_filter]
-
-        # If 'All' clients are selected, summarize by zone
-        if client_filter == "All":
-            client_site_count_summary = client_site_count.groupby(['Cluster', 'Zone']).agg(Total_Site_Count=('Site Count', 'sum')).reset_index()
-            st.write("Total Site Count by Zone:")
-            st.table(client_site_count_summary)
-        else:
-            st.write(f"Client-wise Site Count for {client_filter}:")
-            st.table(client_site_count)
+        # Display the site count table when checkbox is clicked or update button is triggered
+        for client in unique_clients:
+            client_table = client_site_count[client_site_count['Clients'] == client]
+            st.write(f"### {client}")
+            st.table(client_table)
     else:
-        st.error("No client data available to display site counts.")
-
-# Reset update trigger after displaying the table
-if st.session_state['update_triggered']:
-    st.session_state['update_triggered'] = False
-
-# Display the average availability if data has been processed
-if not average_availability.empty:
-    st.subheader("Average Availability by Zone")
-    st.table(average_availability)
-
-# Provide feedback to the user
-st.sidebar.markdown("### Notes:")
-st.sidebar.markdown("""
-- Make sure to upload the necessary files for data processing.
-- Use the filters to customize the view of the site counts and reports.
-""")
+        st.error("No site data available.")
