@@ -31,10 +31,10 @@ if uploaded_outage_file and uploaded_previous_file:
             if 'Site Alias' in df_outage.columns:
                 df_outage['Client'] = df_outage['Site Alias'].str.extract(r'\((.*?)\)')
                 df_outage['Site Name'] = df_outage['Site Alias'].str.extract(r'^(.*?)\s*\(')
-                df_outage['Start Time'] = pd.to_datetime(df_outage['Start Time'])
-                df_outage['End Time'] = pd.to_datetime(df_outage['End Time'])
+                df_outage['Start Time'] = pd.to_datetime(df_outage['Start Time'], errors='coerce')
+                df_outage['End Time'] = pd.to_datetime(df_outage['End Time'], errors='coerce')
                 df_outage['Duration (hours)'] = (df_outage['End Time'] - df_outage['Start Time']).dt.total_seconds() / 3600
-                df_outage['Duration (hours)'] = df_outage['Duration (hours)'].apply(lambda x: round(x, 2))
+                df_outage['Duration (hours)'] = df_outage['Duration (hours)'].apply(lambda x: round(x, 2) if pd.notnull(x) else 0)
 
                 # Read the uploaded Previous Outage data
                 xl_previous = pd.ExcelFile(uploaded_previous_file)
@@ -42,13 +42,13 @@ if uploaded_outage_file and uploaded_previous_file:
                     df_previous = xl_previous.parse('Report Summary', header=2)
                     df_previous.columns = df_previous.columns.str.strip()
 
+                    # Ensure necessary columns exist
                     if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
                         
                         def convert_to_hours(elapsed_time):
                             try:
                                 total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
-                                hours = total_seconds / 3600
-                                return round(hours, 2)
+                                return round(total_seconds / 3600, 2)
                             except:
                                 return 0
 
