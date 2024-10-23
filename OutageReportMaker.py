@@ -162,7 +162,7 @@ if show_client_site_count:
                     client_site_count = client_data.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
 
                     # Display the Client Site Count Table for the current client
-                    st.write(f" {client}")
+                    st.write(f"### {client}")
                     st.table(client_site_count)
 
             else:
