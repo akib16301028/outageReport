@@ -1,119 +1,98 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
 
-# Title for the app
-st.title("Outage Data Analysis")
+# Define the mapping for tenants
+tenant_mapping = {
+    "Grameenphone": "GP",
+    "Banglalink": "BL",
+    "Robi": "ROBI",
+    "Banjo": "BANJO"
+}
 
-# Step 1: Upload Outage Data file
-uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
+# Function to extract client from Site Alias
+def extract_clients(site_alias):
+    if '(' in site_alias and ')' in site_alias:
+        clients = site_alias.split('(')[1].strip(') ').split(', ')
+        return [client for client in clients]
+    return []
 
-if uploaded_outage_file:
-    xl_outage = pd.ExcelFile(uploaded_outage_file)
-    
-    if 'RMS Alarm Elapsed Report' in xl_outage.sheet_names:
-        df_outage = xl_outage.parse('RMS Alarm Elapsed Report', header=2)
-        df_outage.columns = df_outage.columns.str.strip()
+# Function to calculate duration in hours
+def calculate_duration(start_time, end_time):
+    duration = (end_time - start_time).total_seconds() / 3600
+    return round(duration, 2)
 
-        if 'Site Alias' in df_outage.columns:
-            # Extract client and site name
-            df_outage['Client'] = df_outage['Site Alias'].str.extract(r'\((.*?)\)')
-            df_outage['Site Name'] = df_outage['Site Alias'].str.extract(r'^(.*?)\s*\(')
+# Load and process the Excel files
+def load_data(outage_file, whole_month_file):
+    outage_df = pd.read_excel(outage_file, sheet_name='RMS Alarm Elapsed Report', header=2)
+    whole_month_df = pd.read_excel(whole_month_file, sheet_name='RMS Alarm Elapsed Report', header=2)
+    return outage_df, whole_month_df
 
-            # Process timestamps and calculate duration
-            df_outage['Start Time'] = pd.to_datetime(df_outage['Start Time'], errors='coerce')
-            df_outage['End Time'] = pd.to_datetime(df_outage['End Time'], errors='coerce')
-            df_outage['Duration (hours)'] = (df_outage['End Time'] - df_outage['Start Time']).dt.total_seconds() / 3600
-            df_outage['Duration (hours)'] = df_outage['Duration (hours)'].apply(lambda x: round(x, 2) if pd.notnull(x) else 0)
+# Main function to run the Streamlit app
+def main():
+    st.title("Outage Data Processing")
 
-            st.success("Outage data uploaded and processed.")
-        else:
-            st.error("The required 'Site Alias' column is not found in the Outage data.")
-    else:
-        st.error("The 'RMS Alarm Elapsed Report' sheet is not found in the Outage data.")
+    # File upload
+    outage_file = st.file_uploader("Upload Outage Excel Data", type=['xlsx'])
+    whole_month_file = st.file_uploader("Upload Whole Month Outage Excel Data", type=['xlsx'])
+    dc_availability_file = st.file_uploader("Upload DC Availability Data", type=['xlsx'])
 
-# Step 2: Upload Previous Outage Data file
-uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
+    if outage_file and whole_month_file:
+        outage_df, whole_month_df = load_data(outage_file, whole_month_file)
 
-if uploaded_outage_file and uploaded_previous_file:
-    xl_previous = pd.ExcelFile(uploaded_previous_file)
-    
-    if 'Report Summary' in xl_previous.sheet_names:
-        df_previous = xl_previous.parse('Report Summary', header=2)
-        df_previous.columns = df_previous.columns.str.strip()
+        # Process outage data
+        outage_df['Start Time'] = pd.to_datetime(outage_df['Start Time'])
+        outage_df['End Time'] = pd.to_datetime(outage_df['End Time'])
+        outage_df['Duration'] = outage_df.apply(lambda x: calculate_duration(x['Start Time'], x['End Time']), axis=1)
 
-        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
+        # Initialize results storage
+        results = {}
+
+        # Group by Cluster and Zone
+        for _, group in outage_df.groupby(['Cluster', 'Zone']):
+            site_count = group['Site Alias'].nunique()
+            event_count = group['Site Alias'].count()
+            total_duration = group['Duration'].sum()
             
-            # Convert elapsed time to hours
-            def convert_to_hours(elapsed_time):
-                try:
-                    total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
-                    return round(total_seconds / 3600, 2)
-                except:
-                    return 0
+            if group['Cluster'].iloc[0] not in results:
+                results[group['Cluster'].iloc[0]] = {}
 
-            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
-
-            # Map tenant names
-            tenant_map = {
-                'Grameenphone': 'GP', 'Banglalink': 'BL', 'Robi': 'ROBI', 'Banjo': 'BANJO'
+            results[group['Cluster'].iloc[0]][group['Zone'].iloc[0]] = {
+                'Site Count': site_count,
+                'Duration': total_duration,
+                'Event Count': event_count
             }
-            df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
 
-            # Step 3: Merge outage data and previous outage data
-            clients = df_outage['Client'].unique()
-            reports = {}
+        # Create a table for display
+        final_table = []
 
-            for client in clients:
-                client_outage_df = df_outage[df_outage['Client'] == client]
-
-                # Aggregate outage data
-                client_agg = client_outage_df.groupby(['Cluster', 'Zone']).agg(
-                    Site_Count=('Site Alias', 'nunique'),
-                    Duration=('Duration (hours)', 'sum'),
-                    Event_Count=('Site Alias', 'count')
-                ).reset_index()
-
-                # Filter previous outage data for the client
-                client_previous_df = df_previous[df_previous['Tenant'] == client]
-                pivot_elapsed_time = client_previous_df.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
-
-                # Merge both datasets
-                report = pd.merge(client_agg, pivot_elapsed_time, how='left', on='Zone')
-                report['Elapsed Time (hours)'] = report['Elapsed Time (hours)'].fillna(0)
-                report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
-
-                # Ensure columns exist before adding totals
-                duration_sum = report['Duration'].sum() if 'Duration' in report.columns else 0
-                site_count_sum = report['Site_Count'].sum() if 'Site_Count' in report.columns else 0
-                event_count_sum = report['Event_Count'].sum() if 'Event_Count' in report.columns else 0
-                redeem_hours_sum = report['Total Redeem Hours'].sum() if 'Total Redeem Hours' in report.columns else 0
-
-                # Add total row
-                total_row = pd.DataFrame({
-                    'Cluster': ['Total'],
-                    'Zone': [''],
-                    'Site_Count': [site_count_sum],
-                    'Duration (hours)': [duration_sum],
-                    'Event_Count': [event_count_sum],
-                    'Total Redeem Hours': [redeem_hours_sum]
+        for cluster, zones in results.items():
+            for zone, metrics in zones.items():
+                final_table.append({
+                    'Region': cluster,
+                    'Zone': zone,
+                    'Site Count': metrics['Site Count'],
+                    'Duration': f"{metrics['Duration']:.2f}",
+                    'Event Count': metrics['Event Count']
                 })
-                report = pd.concat([report, total_row], ignore_index=True)
 
-                reports[client] = report
+        final_df = pd.DataFrame(final_table)
 
-            # Step 4: Display the merged table with the custom header
-            report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
-            for client, report in reports.items():
-                st.markdown(
-                    f'<h4>SC wise <b>{client}</b> Site Outage Status on <b>{report_date}</b> '
-                    f'<i><small>(as per RMS)</small></i></h4>',
-                    unsafe_allow_html=True
-                )
-                st.table(report[['Cluster', 'Zone', 'Site_Count', 'Duration (hours)', 'Event_Count', 'Total Redeem Hours']])
+        # Filter by client if needed
+        clients = st.multiselect("Select Clients to Filter", options=list(tenant_mapping.keys()))
+        
+        if clients:
+            final_df = final_df[final_df['Region'].isin(clients)]
 
-        else:
-            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found in the Previous Outage data.")
-    else:
-        st.error("The 'Report Summary' sheet is not found in the Previous Outage data.")
+        st.write(final_df)
+
+        # Option to download the report
+        if st.button("Download Report"):
+            with pd.ExcelWriter('Outage_Report.xlsx') as writer:
+                outage_df.to_excel(writer, sheet_name='Outage Data', index=False)
+                final_df.to_excel(writer, sheet_name='Outage Report', index=False)
+
+            st.success("Report has been saved as 'Outage_Report.xlsx'")
+
+if __name__ == "__main__":
+    main()
