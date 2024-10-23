@@ -102,9 +102,7 @@ if uploaded_outage_file and not regions_zones.empty:
                     return report
 
                 if selected_client == 'All':
-                    for client in df['Client'].unique():
-                        report = reports[client]
-                        display_table(client, report)
+                    st.error("Please select a specific client to view their report.")
                 else:
                     report = reports[selected_client]
                     display_table(selected_client, report)
