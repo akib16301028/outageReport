@@ -154,16 +154,17 @@ if show_client_site_count:
                 # Group by Client, Cluster, and Zone
                 client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
 
-                # Get unique clients
-                unique_clients = client_site_count['Clients'].unique()
+                # Create a total row for the table
+                total_row = client_site_count.groupby('Clients').agg({'Site Count': 'sum'}).reset_index()
+                total_row['Cluster'] = 'Total'
+                total_row['Zone'] = ''
 
-                # Display separate tables for each client
-                for client in unique_clients:
-                    client_table = client_site_count[client_site_count['Clients'] == client]
-                    total_count = client_table['Site Count'].sum()
-                    st.write(f"Client Site Count Table for {client}:")
-                    st.table(client_table)
-                    st.write(f"**Total for {client}:** {total_count}")
+                # Append total row to client_site_count DataFrame
+                client_site_count = pd.concat([client_site_count, total_row], ignore_index=True)
+
+                # Display the client site count table
+                st.write("Client Site Count Table:")
+                st.table(client_site_count)
 
             else:
                 st.error("The required 'Site Alias' column is not found in the initial file.")
