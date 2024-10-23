@@ -23,7 +23,7 @@ try:
     df_default.columns = df_default.columns.str.strip()
     if 'Site Alias' in df_default.columns:
         df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
-        df_default_exploded = df_default.exploded('Clients')
+        df_default_exploded = df_default.explode('Clients')  # Corrected from 'exploded' to 'explode'
         regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
     else:
         st.error("The required 'Site Alias' column is not found in the default file.")
@@ -31,6 +31,7 @@ try:
 except FileNotFoundError:
     st.error("Default file not found.")
     regions_zones = pd.DataFrame()
+
 
 # Upload Power Availability Data
 uploaded_power_file = st.sidebar.file_uploader("Please upload Power Availability Data (Excel file)", type="xlsx")
