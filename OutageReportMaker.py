@@ -26,61 +26,9 @@ except FileNotFoundError:
     st.error("Default file not found.")
     regions_zones = pd.DataFrame()  
 
-# Load Previous Outage Data and Map Redeem Hours
+# Upload Previous Outage Data
 st.subheader("Upload Previous Outage Data")
-
 uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx", key="previous_outage_file")
-
-# Initialize session state for storing reports
-if 'previous_data' not in st.session_state:
-    st.session_state.previous_data = None
-
-if uploaded_previous_file:
-    xl_previous = pd.ExcelFile(uploaded_previous_file)
-    
-    if 'Report Summary' in xl_previous.sheet_names:
-        df_previous = xl_previous.parse('Report Summary', header=2)
-        df_previous.columns = df_previous.columns.str.strip()
-
-        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
-            
-            def convert_to_hours(elapsed_time):
-                try:
-                    total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
-                    hours = total_seconds / 3600
-                    return round(hours, 2)
-                except:
-                    return 0
-
-            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
-            tenant_map = {
-                'Grameenphone': 'GP', 'Banglalink': 'BL', 'Robi': 'ROBI', 'Banjo': 'BANJO'
-            }
-
-            df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
-
-            clients = df_previous['Tenant'].unique()
-            selected_client = st.selectbox("Select a Client (Tenant)", clients)
-
-            df_filtered = df_previous[df_previous['Tenant'] == selected_client]
-
-            if not df_filtered.empty:
-                st.write(f"Showing data for Client: {selected_client}")
-                pivot_elapsed_time = df_filtered.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
-                total_row = pd.DataFrame({'Zone': ['Total'], 'Elapsed Time (hours)': [pivot_elapsed_time['Elapsed Time (hours)'].sum()]})
-                pivot_elapsed_time = pd.concat([pivot_elapsed_time, total_row], ignore_index=True)
-                pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
-                st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
-                st.table(pivot_elapsed_time)
-
-                # Store the previous data in session state
-                st.session_state.previous_data = df_previous
-            else:
-                st.error(f"No data available for the client '{selected_client}'")
-        else:
-            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
-    else:
-        st.error("The 'Report Summary' sheet is not found.")
 
 # Upload Outage Data
 st.subheader("Upload Outage Data")
@@ -89,16 +37,43 @@ uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file
 # Initialize session state for reports if not present
 if 'reports' not in st.session_state:
     st.session_state.reports = {}
-if 'report_generated' not in st.session_state:
-    st.session_state.report_generated = False
+if 'previous_data' not in st.session_state:
+    st.session_state.previous_data = None
 
-if uploaded_outage_file and not regions_zones.empty:
-    report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
-
+# Generate Report Button
+if uploaded_previous_file and uploaded_outage_file:
     if st.button("Generate Report"):
-        st.session_state.report_generated = True
-    
-    if st.session_state.report_generated:
+        # Process Previous Outage Data
+        xl_previous = pd.ExcelFile(uploaded_previous_file)
+        if 'Report Summary' in xl_previous.sheet_names:
+            df_previous = xl_previous.parse('Report Summary', header=2)
+            df_previous.columns = df_previous.columns.str.strip()
+
+            if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
+                def convert_to_hours(elapsed_time):
+                    try:
+                        total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
+                        hours = total_seconds / 3600
+                        return round(hours, 2)
+                    except:
+                        return 0
+
+                df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
+                tenant_map = {
+                    'Grameenphone': 'GP', 'Banglalink': 'BL', 'Robi': 'ROBI', 'Banjo': 'BANJO'
+                }
+                df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
+
+                # Store the previous data in session state
+                st.session_state.previous_data = df_previous
+            else:
+                st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
+                st.session_state.previous_data = None
+        else:
+            st.error("The 'Report Summary' sheet is not found.")
+            st.session_state.previous_data = None
+
+        # Process Current Outage Data
         xl = pd.ExcelFile(uploaded_outage_file)
         if 'RMS Alarm Elapsed Report' in xl.sheet_names:
             df = xl.parse('RMS Alarm Elapsed Report', header=2)
@@ -106,7 +81,6 @@ if uploaded_outage_file and not regions_zones.empty:
 
             if 'Site Alias' in df.columns:
                 df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
-                df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
                 df['Start Time'] = pd.to_datetime(df['Start Time'])
                 df['End Time'] = pd.to_datetime(df['End Time'])
                 df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
@@ -144,12 +118,12 @@ if uploaded_outage_file and not regions_zones.empty:
                     report = generate_report(client_df, client)
                     st.session_state.reports[client] = report
 
+                # Display the merged report
                 selected_client = st.selectbox("Select a client to filter", options=clients, index=0)
 
                 def display_table(client_name, report):
                     st.markdown(
-                        f'<h4>SC wise <b>{client_name}</b> Site Outage Status on <b>{report_date}</b> '
-                        f'<i><small>(as per RMS)</small></i></h4>', 
+                        f'<h4>SC wise <b>{client_name}</b> Site Outage Status</h4>', 
                         unsafe_allow_html=True
                     )
                     report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
@@ -175,11 +149,13 @@ if uploaded_outage_file and not regions_zones.empty:
 
                 if st.button("Download Report"):
                     output = to_excel()
-                    file_name = f"SC wise {selected_client} Site Outage Status on {report_date}.xlsx"
+                    file_name = f"Outage Report_{selected_client}.xlsx"
                     st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     st.success("Report generated and ready to download!")
             else:
                 st.error("The required 'Site Alias' column is not found.")
+else:
+    st.info("Please upload both Previous Outage Data and Current Outage Data files to generate the report.")
 
 # Section for Client Site Count from RMS Station Status Report
 if show_site_count and not regions_zones.empty:
@@ -200,13 +176,6 @@ if show_site_count and not regions_zones.empty:
 
             # Group by Client, Cluster, and Zone
             client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-
-            # Option to update the Client Site Count
-            if st.button("Update Client Site Count"):
-                # Reprocess the data
-                updated_client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-                st.success("Client Site Count updated!")
-                st.table(updated_client_site_count)
 
             st.write("Client Site Count Table:")
             st.table(client_site_count)
