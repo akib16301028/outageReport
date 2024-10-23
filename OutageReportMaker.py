@@ -166,7 +166,7 @@ if show_client_site_count:
         except FileNotFoundError:
             st.error("Initial file not found.")
 
-# Option to upload a new RMS Station Status Report
+# Move the optional upload section here
 st.subheader("Optional: Upload a New RMS Station Status Report")
 uploaded_new_report_file = st.file_uploader("Please upload a new RMS Station Status Report file", type="xlsx")
 
