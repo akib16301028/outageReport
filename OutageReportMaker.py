@@ -52,47 +52,56 @@ if uploaded_outage_file and not regions_zones.empty:
                 df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
                 def generate_report(client_df, selected_client):
-                    # Extract regions and zones relevant to the selected client
-                    relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
-                    if relevant_zones.empty:
-                        return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
+    # Extract regions and zones relevant to the selected client
+    relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
+    if relevant_zones.empty:
+        return pd.DataFrame(columns=['Region', 'Zone', 'Site Count', 'Duration (hours)', 'Event Count'])
 
-                    relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
+    relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
 
-                    # Create a full report structure with the relevant regions and zones
-                    full_report = relevant_regions_zones.copy()
-                    client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
-                        Site_Count=('Site Alias', 'nunique'),
-                        Duration=('Duration (hours)', 'sum'),
-                        Event_Count=('Site Alias', 'count')
-                    ).reset_index()
+    # Create a full report structure with the relevant regions and zones
+    full_report = relevant_regions_zones.copy()
+    client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
+        Site_Count=('Site Alias', 'nunique'),
+        Duration=('Duration (hours)', 'sum'),
+        Event_Count=('Site Alias', 'count')
+    ).reset_index()
 
-                    # Merge the client aggregated report with the full report
-                    report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
-                    report = report.fillna(0)  # Fill NaNs with zeros
+    # Merge the client aggregated report with the full report
+    report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
+    report = report.fillna(0)  # Fill NaNs with zeros
 
-                    # Check if 'Duration' column exists before applying rounding
-                    if 'Duration' in report.columns:
-                        report['Duration (hours)'] = report['Duration'].apply(lambda x: round(x, 2))  # Rounding the duration
-                    else:
-                        st.warning(f"'Duration' column not found in report for client {selected_client}. This might indicate missing data.")
+    # Check if 'Duration' column exists before applying rounding
+    if 'Duration' in report.columns:
+        report['Duration (hours)'] = report['Duration'].apply(lambda x: round(x, 2))  # Rounding the duration
+    else:
+        st.warning(f"'Duration' column not found in report for client {selected_client}. This might indicate missing data.")
 
-                    # Rename columns
-                    report = report.rename(columns={
-                        'Cluster': 'Region',
-                        'Site_Count': 'Site Count',
-                        'Event_Count': 'Event Count',
-                        'Duration': 'Duration (hours)'
-                    })
+    # Rename columns
+    report = report.rename(columns={
+        'Cluster': 'Region',
+        'Site_Count': 'Site Count',
+        'Event_Count': 'Event Count',
+        'Duration': 'Duration (hours)'
+    })
 
-                    # Add total row
-                    total_row = pd.DataFrame({
-                        'Region': ['Total'],
-                        'Zone': [''],
-                        'Site Count': [report['Site Count'].sum()],
-                        'Duration (hours)': [report['Duration (hours)'].sum()],
-                        'Event Count': [report['Event Count'].sum()]
-                    })
+    # Add total row
+    total_row = pd.DataFrame({
+        'Region': ['Total'],
+        'Zone': [''],
+        'Site Count': [report['Site Count'].sum()],
+        'Duration (hours)': [report['Duration (hours)'].sum()],
+        'Event Count': [report['Event Count'].sum()]
+    })
+
+    # Reset index to avoid duplication issues
+    report = report.reset_index(drop=True)
+    total_row = total_row.reset_index(drop=True)
+
+    # Concatenate the report and total row
+    report = pd.concat([report, total_row], ignore_index=True)
+    return report
+
                     report = pd.concat([report, total_row], ignore_index=True)
                     return report
 
