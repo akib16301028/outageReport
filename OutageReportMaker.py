@@ -23,7 +23,7 @@ try:
     df_default.columns = df_default.columns.str.strip()
     if 'Site Alias' in df_default.columns:
         df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
-        df_default_exploded = df_default.explode('Clients')
+        df_default_exploded = df_default.exploded('Clients')
         regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
     else:
         st.error("The required 'Site Alias' column is not found in the default file.")
@@ -31,6 +31,35 @@ try:
 except FileNotFoundError:
     st.error("Default file not found.")
     regions_zones = pd.DataFrame()
+
+# Upload Power Availability Data
+uploaded_power_file = st.sidebar.file_uploader("Please upload Power Availability Data (Excel file)", type="xlsx")
+
+# Initialize DataFrames for average availability
+availability_df = pd.DataFrame()
+average_availability = pd.DataFrame()
+
+# Process the uploaded Power Availability data
+if uploaded_power_file:
+    xl_power = pd.ExcelFile(uploaded_power_file)
+    if 'Site wise summary' in xl_power.sheet_names:
+        availability_df = xl_power.parse('Site wise summary', header=0)
+        availability_df.columns = availability_df.columns.str.strip()  # Clean column names
+
+        # Check if required columns exist
+        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)']
+        if all(col in availability_df.columns for col in required_columns):
+            # Calculate average AC and DC availability by Zone
+            average_availability = availability_df.groupby('Zone').agg(
+                Avg_AC_Availability=('AC Availability (%)', 'mean'),
+                Avg_DC_Availability=('DC Availability (%)', 'mean')
+            ).reset_index()
+            average_availability['Avg_AC_Availability'] = average_availability['Avg_AC_Availability'].round(2)
+            average_availability['Avg_DC_Availability'] = average_availability['Avg_DC_Availability'].round(2)
+        else:
+            st.error("The required columns are not found in the uploaded Power Availability file.")
+    else:
+        st.error("The 'Site wise summary' sheet is not found in the uploaded Power Availability file.")
 
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
@@ -148,3 +177,13 @@ if show_client_site_count or st.session_state['update_triggered']:  # Trigger cl
             st.write(f"### {client}:")
             st.table(client_table)
             st.write(f"**Total for {client}:** {total_count}")
+
+# Option to add AC and DC availability to Merged Report
+if not average_availability.empty:
+    if st.sidebar.checkbox("Show Average Power Availability"):
+        for client in reports.keys():
+            if client in reports:
+                report = reports[client]
+                merged_report_with_availability = pd.merge(report, average_availability, how='left', on='Zone')
+                st.write(f"### Average Power Availability for {client}:")
+                st.table(merged_report_with_availability[['Region', 'Zone', 'Avg_AC_Availability', 'Avg_DC_Availability']])
