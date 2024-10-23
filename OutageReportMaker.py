@@ -103,9 +103,7 @@ if uploaded_outage_file:
 if not average_availability.empty:
     if st.sidebar.checkbox("Add AC and DC Availability to Merged Report"):
         st.subheader("Merged Report with AC and DC Availability")
-        if selected_client == "All":
+        if 'Zone' in combined_report.columns:
+            # Merge average availability data into the combined report
             combined_report_with_availability = pd.merge(combined_report, average_availability, how='left', on='Zone')
             st.table(combined_report_with_availability)
-        elif selected_client in reports:
-            report_with_availability = pd.merge(reports[selected_client], average_availability, how='left', on='Zone')
-            st.table(report_with_availability)
