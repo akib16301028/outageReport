@@ -32,7 +32,6 @@ except FileNotFoundError:
     st.error("Default file not found.")
     regions_zones = pd.DataFrame()
 
-
 # Upload Power Availability Data
 uploaded_power_file = st.sidebar.file_uploader("Please upload Power Availability Data (Excel file)", type="xlsx")
 
@@ -43,15 +42,15 @@ average_availability = pd.DataFrame()
 # Process the uploaded Power Availability data
 if uploaded_power_file:
     xl_power = pd.ExcelFile(uploaded_power_file)
-    if 'Site wise summary' in xl_power.sheet_names:
-        availability_df = xl_power.parse('Site wise summary', header=2)  # Adjusted to start reading from row 3
+    if 'Site Wise Summary' in xl_power.sheet_names:
+        availability_df = xl_power.parse('Site Wise Summary', header=2)
         availability_df.columns = availability_df.columns.str.strip()  # Clean column names
 
         # Check if required columns exist
-        required_columns = ['Zone', 'Site', 'AC Availability (%)', 'DC Availability (%)']  # Added 'Site' column
+        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']
         if all(col in availability_df.columns for col in required_columns):
-            # Filter out non-KPI sites
-            availability_df = availability_df[~availability_df['Site'].str.startswith('L', na=False)]
+            # Exclude non-KPI sites starting with 'L'
+            availability_df = availability_df[~availability_df['Site'].str.startswith('L')]
 
             # Calculate average AC and DC availability by Zone
             average_availability = availability_df.groupby('Zone').agg(
@@ -63,7 +62,7 @@ if uploaded_power_file:
         else:
             st.error("The required columns are not found in the uploaded Power Availability file.")
     else:
-        st.error("The 'Site wise summary' sheet is not found in the uploaded Power Availability file.")
+        st.error("The 'Site Wise Summary' sheet is not found in the uploaded Power Availability file.")
 
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
@@ -157,6 +156,10 @@ if uploaded_previous_file:
                     merged_report = merged_report.fillna(0)
                     merged_report['Total Site Count'] = merged_report['Site Count_y'].fillna(0).astype(int)
 
+                    # Merge with Average Power Availability
+                    if not average_availability.empty:
+                        merged_report = pd.merge(merged_report, average_availability, how='left', on='Zone')
+
                     # Display the final merged report
                     st.write(f"Merged Report for {selected_client}:")
                     st.table(merged_report)
@@ -177,12 +180,7 @@ if show_client_site_count or st.session_state['update_triggered']:  # Trigger cl
         # Display the site count table when checkbox is clicked or update button is triggered
         for client in unique_clients:
             client_table = client_site_count[client_site_count['Clients'] == client]
-            total_count = client_table['Site Count'].sum()
-            st.write(f"### {client}:")
+            st.write(f"### {client}")
             st.table(client_table)
-            st.write(f"**Total for {client}:** {total_count}")
-
-# Option to merge average AC/DC availability into the report
-if not average_availability.empty and st.checkbox("Show Power Availability Data"):
-    st.subheader("Average Power Availability by Zone")
-    st.table(average_availability)
+    else:
+        st.error("No site data available.")
