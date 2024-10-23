@@ -68,17 +68,38 @@ if uploaded_outage_file and not regions_zones.empty:
 
                 return report
 
-            clients = np.append('All', df['Client'].unique())
+            clients = np.append('All', df['Client'].unique())  # Add 'All' option
             reports = {}
             for client in df['Client'].unique():
                 client_df = df[df['Client'] == client]
                 report = generate_report(client_df, client)
                 reports[client] = report
 
-# Comment out "Select Outage Report Date" and "Generate Report" button
-# report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
-# if st.button("Generate Report"):
-#     st.session_state.generate_report = True
+            # Calendar to select report date
+            report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
+
+            # Client filter option
+            selected_client = st.selectbox("Select a Client (Tenant)", clients)
+
+            # Function to display the table with header
+            def display_table(client_name, report):
+                st.markdown(
+                    f'<h4>SC wise <b>{client_name}</b> Site Outage Status on <b>{report_date}</b> '
+                    f'<i><small>(as per RMS)</small></i></h4>', 
+                    unsafe_allow_html=True
+                )
+                report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
+                st.table(report)
+                return report
+
+            # Display report for 'All' clients or a specific client
+            if selected_client == 'All':
+                for client in df['Client'].unique():
+                    report = reports[client]
+                    display_table(client, report)
+            else:
+                report = reports[selected_client]
+                display_table(selected_client, report)
 
 # Load Previous Outage Data and Map Redeem Hours
 st.subheader("Upload Previous Outage Data")
@@ -110,6 +131,8 @@ if uploaded_previous_file:
             df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
 
             clients = df_previous['Tenant'].unique()
+            clients = np.append('All', clients)  # Add 'All' option here too
+
             selected_client = st.selectbox("Select a Client (Tenant)", clients)
 
             df_filtered = df_previous[df_previous['Tenant'] == selected_client]
