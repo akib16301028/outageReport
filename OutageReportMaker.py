@@ -19,8 +19,10 @@ def extract_clients(site_alias):
 
 # Function to calculate duration in hours
 def calculate_duration(start_time, end_time):
-    duration = (end_time - start_time).total_seconds() / 3600
-    return round(duration, 2)
+    if pd.notnull(start_time) and pd.notnull(end_time):
+        duration = (end_time - start_time).total_seconds() / 3600  # Convert seconds to hours
+        return round(duration, 2)
+    return np.nan  # Return NaN if either time is NaT
 
 # Load and process the Excel files
 def load_data(outage_file, whole_month_file):
@@ -40,24 +42,26 @@ def main():
     if outage_file and whole_month_file:
         outage_df, whole_month_df = load_data(outage_file, whole_month_file)
 
-        # Process outage data
-        outage_df['Start Time'] = pd.to_datetime(outage_df['Start Time'])
-        outage_df['End Time'] = pd.to_datetime(outage_df['End Time'])
-        outage_df['Duration'] = outage_df.apply(lambda x: calculate_duration(x['Start Time'], x['End Time']), axis=1)
+        # Convert Start Time and End Time to datetime
+        outage_df['Start Time'] = pd.to_datetime(outage_df['Start Time'], errors='coerce')
+        outage_df['End Time'] = pd.to_datetime(outage_df['End Time'], errors='coerce')
+
+        # Calculate Duration
+        outage_df['Duration (hours)'] = outage_df.apply(lambda x: calculate_duration(x['Start Time'], x['End Time']), axis=1)
 
         # Initialize results storage
         results = {}
 
         # Group by Cluster and Zone
-        for _, group in outage_df.groupby(['Cluster', 'Zone']):
+        for (cluster, zone), group in outage_df.groupby(['Cluster', 'Zone']):
             site_count = group['Site Alias'].nunique()
             event_count = group['Site Alias'].count()
-            total_duration = group['Duration'].sum()
-            
-            if group['Cluster'].iloc[0] not in results:
-                results[group['Cluster'].iloc[0]] = {}
+            total_duration = group['Duration (hours)'].sum()
 
-            results[group['Cluster'].iloc[0]][group['Zone'].iloc[0]] = {
+            if cluster not in results:
+                results[cluster] = {}
+
+            results[cluster][zone] = {
                 'Site Count': site_count,
                 'Duration': total_duration,
                 'Event Count': event_count
@@ -72,7 +76,7 @@ def main():
                     'Region': cluster,
                     'Zone': zone,
                     'Site Count': metrics['Site Count'],
-                    'Duration': f"{metrics['Duration']:.2f}",
+                    'Duration (hours)': f"{metrics['Duration']:.2f}",
                     'Event Count': metrics['Event Count']
                 })
 
@@ -80,7 +84,7 @@ def main():
 
         # Filter by client if needed
         clients = st.multiselect("Select Clients to Filter", options=list(tenant_mapping.keys()))
-        
+
         if clients:
             final_df = final_df[final_df['Region'].isin(clients)]
 
