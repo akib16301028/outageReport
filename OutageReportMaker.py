@@ -137,6 +137,6 @@ if show_client_site_count:
         for client in unique_clients:
             client_table = client_site_count[client_site_count['Clients'] == client]
             total_count = client_table['Site Count'].sum()
-            st.write(f"### Client Site Count Table for {client}:")
+            st.write(f"### {client}:")
             st.table(client_table)
             st.write(f"**Total for {client}:** {total_count}")
