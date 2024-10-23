@@ -8,20 +8,6 @@ st.title("Outage Data Analysis")
 # Sidebar for Client Site Count option
 show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
 
-# Option to upload a new RMS Station Status Report
-st.subheader("Optional: Upload a New RMS Station Status Report")
-uploaded_new_report_file = st.file_uploader("Please upload a new RMS Station Status Report file", type="xlsx")
-
-if uploaded_new_report_file:
-    try:
-        df_new_report = pd.read_excel(uploaded_new_report_file, header=2)
-        df_new_report.columns = df_new_report.columns.str.strip()
-        # Process the new report similar to the existing one
-        # You can add additional processing logic here if needed
-        st.success("New RMS Station Status Report uploaded successfully.")
-    except Exception as e:
-        st.error(f"Error uploading new RMS Station Status Report: {e}")
-
 # Load the default RMS Station Status Report
 try:
     default_file_path = "RMS Station Status Report.xlsx"  
@@ -180,4 +166,16 @@ if show_client_site_count:
         except FileNotFoundError:
             st.error("Initial file not found.")
 
+# Option to upload a new RMS Station Status Report
+st.subheader("Optional: Upload a New RMS Station Status Report")
+uploaded_new_report_file = st.file_uploader("Please upload a new RMS Station Status Report file", type="xlsx")
 
+if uploaded_new_report_file:
+    try:
+        df_new_report = pd.read_excel(uploaded_new_report_file, header=2)
+        df_new_report.columns = df_new_report.columns.str.strip()
+        # Process the new report similar to the existing one
+        # You can add additional processing logic here if needed
+        st.success("New RMS Station Status Report uploaded successfully.")
+    except Exception as e:
+        st.error(f"Error uploading new RMS Station Status Report: {e}")
