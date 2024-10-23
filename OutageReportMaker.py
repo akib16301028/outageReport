@@ -155,27 +155,19 @@ if show_client_site_count:
                 for client in unique_clients:
                     client_table = client_site_count[client_site_count['Clients'] == client]
                     total_count = client_table['Site Count'].sum()
-                    
-                    # Display total count for the client first
-                    st.write(f"**Client: {client}**")
-                    st.write(f"**Total: {total_count}**")
-                    st.table(client_table)
+
+                    # Create a DataFrame for displaying client name and total
+                    total_display = pd.DataFrame({
+                        'Client Name': [client],
+                        'Total': [total_count]
+                    })
+
+                    # Show the total before the table
+                    st.write(f"### {client}:")
+                    st.table(total_display)  # Display total at the top
+                    st.table(client_table)     # Display client site count table
 
             else:
                 st.error("The required 'Site Alias' column is not found in the initial file.")
         except FileNotFoundError:
             st.error("Initial file not found.")
-
-# Move the optional upload section here
-st.subheader("Optional: Upload a New RMS Station Status Report")
-uploaded_new_report_file = st.file_uploader("Please upload a new RMS Station Status Report file", type="xlsx")
-
-if uploaded_new_report_file:
-    try:
-        df_new_report = pd.read_excel(uploaded_new_report_file, header=2)
-        df_new_report.columns = df_new_report.columns.str.strip()
-        # Process the new report similar to the existing one
-        # You can add additional processing logic here if needed
-        st.success("New RMS Station Status Report uploaded successfully.")
-    except Exception as e:
-        st.error(f"Error uploading new RMS Station Status Report: {e}")
