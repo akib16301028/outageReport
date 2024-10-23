@@ -13,7 +13,6 @@ try:
     default_file_path = "RMS Station Status Report.xlsx"  
     df_default = pd.read_excel(default_file_path, header=2)
     df_default.columns = df_default.columns.str.strip()
-
     if 'Site Alias' in df_default.columns:
         df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
         df_default_exploded = df_default.explode('Clients')
@@ -23,7 +22,7 @@ try:
         regions_zones = pd.DataFrame() 
 except FileNotFoundError:
     st.error("Default file not found.")
-    regions_zones = pd.DataFrame()
+    regions_zones = pd.DataFrame()  
 
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
@@ -42,7 +41,7 @@ if uploaded_outage_file and not regions_zones.empty:
             df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
             df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
 
-            # Function to generate the outage report
+            # Function to generate the report
             def generate_report(client_df, selected_client):
                 relevant_zones = df_default[df_default['Site Alias'].str.contains(selected_client)]
                 if relevant_zones.empty:
@@ -55,7 +54,6 @@ if uploaded_outage_file and not regions_zones.empty:
                     Duration=('Duration (hours)', 'sum'),
                     Event_Count=('Site Alias', 'count')
                 ).reset_index()
-
                 report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
                 report = report.fillna(0)
                 report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))
@@ -69,7 +67,6 @@ if uploaded_outage_file and not regions_zones.empty:
 
                 return report
 
-            # Generate reports for each client
             clients = np.append('All', df['Client'].unique())
             reports = {}
             for client in df['Client'].unique():
@@ -77,11 +74,64 @@ if uploaded_outage_file and not regions_zones.empty:
                 report = generate_report(client_df, client)
                 reports[client] = report
 
+# Load Previous Outage Data and Map Redeem Hours
+st.subheader("Upload Previous Outage Data")
+
+uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
+
+if uploaded_previous_file:
+    xl_previous = pd.ExcelFile(uploaded_previous_file)
+    
+    if 'Report Summary' in xl_previous.sheet_names:
+        df_previous = xl_previous.parse('Report Summary', header=2)
+        df_previous.columns = df_previous.columns.str.strip()
+
+        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
+            
+            def convert_to_hours(elapsed_time):
+                try:
+                    total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
+                    hours = total_seconds / 3600
+                    return round(hours, 2)
+                except:
+                    return 0
+
+            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
+            tenant_map = {
+                'Grameenphone': 'GP', 'Banglalink': 'BL', 'Robi': 'ROBI', 'Banjo': 'BANJO'
+            }
+
+            df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
+
+            clients = df_previous['Tenant'].unique()
+            selected_client = st.selectbox("Select a Client (Tenant)", clients)
+
+            df_filtered = df_previous[df_previous['Tenant'] == selected_client]
+
+            if not df_filtered.empty:
+                pivot_elapsed_time = df_filtered.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
+                pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
+
+                # Now map the elapsed time into the outage report table
+                if selected_client in reports:
+                    report = reports[selected_client]
+                    report = pd.merge(report, pivot_elapsed_time, how='left', on='Zone')
+                    report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
+                    report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
+                    st.write(f"Updated report for {selected_client} with Total Redeem Hours:")
+                    st.table(report)
+            else:
+                st.error(f"No data available for the client '{selected_client}'")
+        else:
+            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
+    else:
+        st.error("The 'Report Summary' sheet is not found.")
+
 # Section for Client Site Count from RMS Station Status Report
 if show_client_site_count:
     st.subheader("Client Site Count from RMS Station Status Report")
 
-    # Load the initial file for Client Site Count
+    # Load the initial file from the repository for Client Site Count
     if not regions_zones.empty:
         try:
             initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
@@ -91,6 +141,8 @@ if show_client_site_count:
             # Process the initial file to extract client names and count by Cluster/Zone
             if 'Site Alias' in df_initial.columns:
                 df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
+
+                # Explode the dataframe for each client found
                 df_exploded = df_initial.explode('Clients')
 
                 # Group by Client, Cluster, and Zone
@@ -103,61 +155,19 @@ if show_client_site_count:
                 for client in unique_clients:
                     client_table = client_site_count[client_site_count['Clients'] == client]
                     total_count = client_table['Site Count'].sum()
-                    st.write(f"Client Site Count Table for {client}:")
-                    st.write(f"**Total for {client}:** {total_count}")
 
-                    st.table(client_table)
+                    # Create a DataFrame for displaying client name and total
+                    total_display = pd.DataFrame({
+                        'Client Name': [client],
+                        'Total': [total_count]
+                    })
 
-                # Optional Upload: New RMS Station Status Report
-                st.subheader("Optional: Upload a New RMS Station Status Report")
-                new_rms_file = st.file_uploader("Upload New RMS Station Status Report", type="xlsx")
-
-                if new_rms_file:
-                    df_new_rms = pd.read_excel(new_rms_file, header=2)
-                    df_new_rms.columns = df_new_rms.columns.str.strip()
-                    st.write("New RMS Station Status Report Uploaded")
+                    # Show the total before the table
+                    st.write(f"### {client}:")
+                    st.table(total_display)  # Display total at the top
+                    st.table(client_table)     # Display client site count table
 
             else:
                 st.error("The required 'Site Alias' column is not found in the initial file.")
         except FileNotFoundError:
             st.error("Initial file not found.")
-
-# Merging Client Site Count with the Outage Report
-if show_client_site_count and uploaded_outage_file:
-    if not reports:
-        st.error("No outage data is available.")
-    else:
-        for client in reports:
-            report = reports[client]
-            client_site_count_for_client = client_site_count[client_site_count['Clients'] == client]
-
-            # Add Total Site Count column
-            report['Total Site Count'] = 0
-
-            # Merge the tables
-            for idx, site_row in client_site_count_for_client.iterrows():
-                cluster = site_row['Cluster']
-                zone = site_row['Zone']
-                site_count = site_row['Site Count']
-
-                # Match the region and zone in the report
-                match = (report['Region'] == cluster) & (report['Zone'] == zone)
-
-                if match.any():
-                    # If match is found, update the Total Site Count
-                    report.loc[match, 'Total Site Count'] = site_count
-                else:
-                    # Append new row if Region and Zone is not found in report
-                    new_row = {
-                        'Region': cluster,
-                        'Zone': zone,
-                        'Total Site Count': site_count,
-                        'Site Count': 0,
-                        'Duration (hours)': 0,
-                        'Event Count': 0,
-                        'Total Redeem Hours': 0
-                    }
-                    report = report.append(new_row, ignore_index=True)
-
-            st.write(f"Updated Report for Client: {client}")
-            st.table(report)
