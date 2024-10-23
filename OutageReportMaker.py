@@ -5,9 +5,16 @@ import numpy as np
 # Title for the app
 st.title("Outage Data Analysis")
 
+# Initialize session state for the update button
+if 'update_triggered' not in st.session_state:
+    st.session_state['update_triggered'] = False
+
 # Sidebar for Client Site Count option and Update button
 show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
-update_site_count = st.sidebar.button("Update")  # Button for updating site count
+
+# Button for updating site count
+if st.sidebar.button("Update"):
+    st.session_state['update_triggered'] = True
 
 # Load the default RMS Station Status Report
 try:
@@ -128,13 +135,13 @@ if uploaded_previous_file:
         st.error("The 'Report Summary' sheet is not found.")
 
 # Sidebar option to show client-wise site table
-if show_client_site_count or update_site_count:  # Trigger client-site count update with button click
+if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
     st.subheader("Client Site Count from RMS Station Status Report")
     if not regions_zones.empty:
         client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
         unique_clients = client_site_count['Clients'].unique()
 
-        # Display the site count table when checkbox is clicked
+        # Display the site count table when checkbox is clicked or update button is triggered
         for client in unique_clients:
             client_table = client_site_count[client_site_count['Clients'] == client]
             total_count = client_table['Site Count'].sum()
