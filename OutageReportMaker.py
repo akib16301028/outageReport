@@ -10,7 +10,7 @@ show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS St
 
 # Load the default RMS Station Status Report
 try:
-    default_file_path = "RMS Station Status Report.xlsx"  
+    default_file_path = "RMS Station Status Report.xlsx"
     df_default = pd.read_excel(default_file_path, header=2)
     df_default.columns = df_default.columns.str.strip()
     if 'Site Alias' in df_default.columns:
@@ -19,10 +19,10 @@ try:
         regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
     else:
         st.error("The required 'Site Alias' column is not found in the default file.")
-        regions_zones = pd.DataFrame() 
+        regions_zones = pd.DataFrame()
 except FileNotFoundError:
     st.error("Default file not found.")
-    regions_zones = pd.DataFrame()  
+    regions_zones = pd.DataFrame()
 
 # Upload Outage Data
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
@@ -81,7 +81,7 @@ uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel
 
 if uploaded_previous_file:
     xl_previous = pd.ExcelFile(uploaded_previous_file)
-    
+
     if 'Report Summary' in xl_previous.sheet_names:
         df_previous = xl_previous.parse('Report Summary', header=2)
         df_previous.columns = df_previous.columns.str.strip()
@@ -131,14 +131,15 @@ if uploaded_previous_file:
 if show_client_site_count:
     st.subheader("Client Site Count from RMS Station Status Report")
 
-    # Load the initial file from the repository for Client Site Count
-    if not regions_zones.empty:
+    # Upload new RMS Station Status Report
+    uploaded_report_file = st.file_uploader("Upload a new RMS Station Status Report", type="xlsx", key="report_uploader")
+
+    if uploaded_report_file is not None:
         try:
-            initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
-            df_initial = pd.read_excel(initial_file_path, header=2)
+            df_initial = pd.read_excel(uploaded_report_file, header=2)
             df_initial.columns = df_initial.columns.str.strip()
 
-            # Process the initial file to extract client names and count by Cluster/Zone
+            # Process the uploaded file to extract client names and count by Cluster/Zone
             if 'Site Alias' in df_initial.columns:
                 df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
 
@@ -163,11 +164,11 @@ if show_client_site_count:
                     })
 
                     # Show the total before the table
-                    st.write(f"### {client}:")
+                    st.write(f"Client Site Count Table for {client}:")
                     st.table(total_display)  # Display total at the top
                     st.table(client_table)     # Display client site count table
 
             else:
-                st.error("The required 'Site Alias' column is not found in the initial file.")
+                st.error("The required 'Site Alias' column is not found in the uploaded file.")
         except FileNotFoundError:
-            st.error("Initial file not found.")
+            st.error("Uploaded file not found.")
