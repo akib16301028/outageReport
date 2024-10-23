@@ -70,7 +70,12 @@ if uploaded_outage_file and not regions_zones.empty:
                     # Merge the client aggregated report with the full report
                     report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
                     report = report.fillna(0)  # Fill NaNs with zeros
-                    report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: round(x, 2))  # Rounding the duration
+
+                    # Check if 'Duration' column exists before applying rounding
+                    if 'Duration' in report.columns:
+                        report['Duration (hours)'] = report['Duration'].apply(lambda x: round(x, 2))  # Rounding the duration
+                    else:
+                        st.warning(f"'Duration' column not found in report for client {selected_client}. This might indicate missing data.")
 
                     # Rename columns
                     report = report.rename(columns={
@@ -141,6 +146,7 @@ else:
         st.warning("Please upload a valid Outage Excel file.")
 
 # Section 2: RMS Site List Processing with Multiple Clients
+
 st.subheader("Client Site Count from RMS Station Status Report")
 
 # Load the initial file from GitHub repository
@@ -193,63 +199,21 @@ if uploaded_previous_file:
                     hours = total_seconds / 3600  # Convert seconds to hours
                     return round(hours, 2)
                 except Exception as e:
-                    return 0  # Handle any unexpected errors by returning 0 hours
+                    return 0  # Handle any conversion error by returning 0
 
-            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
-            
-            # Extract unique clients from the Tenant (Client) column
-            clients = df_previous['Tenant'].str.strip().str.title().unique().tolist()
+            df_previous['Duration (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
 
-            # Normalize client names to match with the previously stored client info (case-insensitive match)
-            selected_client = st.selectbox("Select a Client (Tenant)", clients)
-            
-            # Filter the data for the selected client (case-insensitive comparison)
-            df_filtered = df_previous[df_previous['Tenant'].str.strip().str.title() == selected_client]
+            # Grouping to get the count of incidents by Zone and Tenant
+            summary_report_previous = df_previous.groupby(['Zone', 'Tenant']).agg(
+                Event_Count=('Elapsed Time', 'count'),
+                Total_Duration=('Duration (hours)', 'sum')
+            ).reset_index()
 
-            # If filtered data exists for the selected client
-            if not df_filtered.empty:
-                st.write(f"Showing data for Client: {selected_client}")
-
-                # Create Pivot Table for Zone and Elapsed Time (for the selected client)
-                pivot_elapsed_time = df_filtered.pivot_table(
-                    index='Zone',
-                    values='Elapsed Time (hours)',
-                    aggfunc='sum'
-                ).reset_index()
-
-                # Add total row to sum elapsed time
-                total_row = pd.DataFrame({'Zone': ['Total'], 'Elapsed Time (hours)': [pivot_elapsed_time['Elapsed Time (hours)'].sum()]})
-                pivot_elapsed_time = pd.concat([pivot_elapsed_time, total_row], ignore_index=True)
-
-                # Ensure two decimal places in the output
-                pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
-
-                st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
-                st.table(pivot_elapsed_time)
-
-                # Adding Total Redeem Hours to Outage Data
-                pivot_elapsed_time.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'}, inplace=True)
-                
-                # Normalize the client names for mapping
-                df_previous['Tenant'] = df_previous['Tenant'].str.strip().str.title().replace({
-                    'Grameenphone': 'GP',
-                    'Banglalink': 'BL',
-                    'Robi': 'ROBI',
-                    'Banjo': 'BANJO'
-                })
-
-                # Merge the Total Redeem Hours with the pivot_elapsed_time
-                merged_data = pd.merge(pivot_elapsed_time, df_previous[['Zone', 'Tenant', 'Elapsed Time (hours)']], 
-                                        how='left', left_on='Zone', right_on='Zone')
-                st.write("Merged Outage Data with Total Redeem Hours:")
-                st.table(merged_data)
-
-            else:
-                st.error(f"No data available for the client '{selected_client}'")
+            # Show the previous summary report
+            st.write("Previous Outage Summary Report")
+            st.table(summary_report_previous)
 
         else:
-            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
+            st.error("The necessary columns ('Elapsed Time', 'Zone', 'Tenant') are not found in the uploaded previous report.")
     else:
-        st.error("The 'Report Summary' sheet is not found.")
-else:
-    st.warning("Please upload a valid Previous Outage Excel file.")
+        st.error("The 'Report Summary' sheet is not present in the uploaded previous file.")
