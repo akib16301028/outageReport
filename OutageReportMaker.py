@@ -6,9 +6,6 @@ import io
 # Title for the app
 st.title("Outage Data Analysis")
 
-# Sidebar for Client Site Count option
-show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
-
 # Load the default RMS Station Status Report
 try:
     default_file_path = "RMS Station Status Report.xlsx"  
@@ -29,6 +26,7 @@ except FileNotFoundError:
 uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
 
 if uploaded_outage_file and not regions_zones.empty:
+    # Removed the date input and generate button as per your requirements
     xl = pd.ExcelFile(uploaded_outage_file)
     if 'RMS Alarm Elapsed Report' in xl.sheet_names:
         df = xl.parse('RMS Alarm Elapsed Report', header=2)
@@ -75,10 +73,44 @@ if uploaded_outage_file and not regions_zones.empty:
                 report = generate_report(client_df, client)
                 reports[client] = report
 
-# Comment out "Select Outage Report Date" and "Generate Report" button
-# report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
-# if st.button("Generate Report"):
-#     st.session_state.generate_report = True
+            # Use only one selectbox for selecting the tenant with a unique key
+            selected_client = st.selectbox("Select a Client (Tenant)", clients, key="client_selectbox")
+
+            def display_table(client_name, report):
+                st.markdown(
+                    f'<h4>SC wise <b>{client_name}</b> Site Outage Status </h4>', 
+                    unsafe_allow_html=True
+                )
+                report['Duration (hours)'] = report['Duration (hours)'].apply(lambda x: f"{x:.2f}")
+                st.table(report)
+                return report
+
+            if selected_client == 'All':
+                for client in df['Client'].unique():
+                    report = reports[client]
+                    display_table(client, report)
+            else:
+                report = reports[selected_client]
+                display_table(selected_client, report)
+
+            # Function to convert to excel
+            def to_excel():
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, sheet_name='Original Data', index=False)
+                    for client, report in reports.items():
+                        report.to_excel(writer, sheet_name=f'{client} Report', index=False)
+                output.seek(0)
+                return output
+
+            # Uncomment to allow downloading of the report
+            # if st.button("Download Report"):
+            #     output = to_excel()
+            #     file_name = f"SC wise {selected_client} Site Outage Status.xlsx"
+            #     st.download_button(label="Download Excel Report", data=output, file_name=file_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            #     st.success("Report generated and ready to download!")
+        else:
+            st.error("The required 'Site Alias' column is not found.")
 
 # Load Previous Outage Data and Map Redeem Hours
 st.subheader("Upload Previous Outage Data")
@@ -110,13 +142,22 @@ if uploaded_previous_file:
             df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
 
             clients = df_previous['Tenant'].unique()
-            selected_client = st.selectbox("Select a Client (Tenant)", clients)
+            clients = np.append('All', clients)  # Include "All" option
+            selected_client = st.selectbox("Select a Client (Tenant)", clients, key="previous_client_selectbox")
+
+            # Calendar for date selection (if required, but not shown as per your request)
+            # selected_date = st.date_input("Select Date", value=pd.to_datetime("today"))
 
             df_filtered = df_previous[df_previous['Tenant'] == selected_client]
 
             if not df_filtered.empty:
+                st.write(f"Showing data for Client: {selected_client}")
                 pivot_elapsed_time = df_filtered.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
+                total_row = pd.DataFrame({'Zone': ['Total'], 'Elapsed Time (hours)': [pivot_elapsed_time['Elapsed Time (hours)'].sum()]})
+                pivot_elapsed_time = pd.concat([pivot_elapsed_time, total_row], ignore_index=True)
                 pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
+                st.write("Pivot Table for Elapsed Time by Zone (Filtered by Client)")
+                st.table(pivot_elapsed_time)
 
                 # Now map the elapsed time into the outage report table
                 if selected_client in reports:
@@ -134,29 +175,22 @@ if uploaded_previous_file:
         st.error("The 'Report Summary' sheet is not found.")
 
 # Section for Client Site Count from RMS Station Status Report
-if show_client_site_count:
-    st.subheader("Client Site Count from RMS Station Status Report")
+st.subheader("Client Site Count from RMS Station Status Report")
 
-    # Load the initial file from the repository for Client Site Count
-    if not regions_zones.empty:
-        try:
-            initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
-            df_initial = pd.read_excel(initial_file_path, header=2)
-            df_initial.columns = df_initial.columns.str.strip()
+# Load the initial file from the repository for Client Site Count
+if not regions_zones.empty:
+    try:
+        initial_file_path = "RMS Station Status Report.xlsx"  # The initial file in your GitHub repo
+        df_initial = pd.read_excel(initial_file_path, header=2)
+        df_initial.columns = df_initial.columns.str.strip()
 
-            # Process the initial file to extract client names and count by Cluster/Zone
-            if 'Site Alias' in df_initial.columns:
-                df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
+        # Process the initial file to extract client names and count by Cluster/Zone
+        df_initial['Clients'] = df_initial['Site Alias'].str.findall(r'\((.*?)\)')
+        df_initial_exploded = df_initial.explode('Clients')
+        client_count = df_initial_exploded.groupby(['Cluster', 'Zone'])['Clients'].nunique().reset_index()
+        client_count.columns = ['Region', 'Zone', 'Client Count']
 
-                # Explode the dataframe for each client found
-                df_exploded = df_initial.explode('Clients')
-
-                # Group by Client, Cluster, and Zone
-                client_site_count = df_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-
-                st.write("Client Site Count Table:")
-                st.table(client_site_count)
-            else:
-                st.error("The required 'Site Alias' column is not found in the initial file.")
-        except FileNotFoundError:
-            st.error("Initial file not found.")
+        # Display the Client Site Count
+        st.table(client_count)
+    except FileNotFoundError:
+        st.error("The initial file for Client Site Count was not found.")
