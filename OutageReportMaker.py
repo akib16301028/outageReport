@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
 
 # Title for the app
 st.title("Outage Data Analysis")
@@ -74,11 +73,6 @@ if uploaded_outage_file and not regions_zones.empty:
                 client_df = df[df['Client'] == client]
                 report = generate_report(client_df, client)
                 reports[client] = report
-
-# Comment out "Select Outage Report Date" and "Generate Report" button
-# report_date = st.date_input("Select Outage Report Date", value=pd.to_datetime("today"))
-# if st.button("Generate Report"):
-#     st.session_state.generate_report = True
 
 # Load Previous Outage Data and Map Redeem Hours
 st.subheader("Upload Previous Outage Data")
@@ -161,9 +155,17 @@ if show_client_site_count:
                 for client in unique_clients:
                     client_table = client_site_count[client_site_count['Clients'] == client]
                     total_count = client_table['Site Count'].sum()
+
+                    # Create a DataFrame for displaying client name and total
+                    total_display = pd.DataFrame({
+                        'Client Name': [client],
+                        'Total': [total_count]
+                    })
+
+                    # Show the total before the table
                     st.write(f"Client Site Count Table for {client}:")
-                    st.table(client_table)
-                    st.write(f"**Total for {client}:** {total_count}")
+                    st.table(total_display)  # Display total at the top
+                    st.table(client_table)     # Display client site count table
 
             else:
                 st.error("The required 'Site Alias' column is not found in the initial file.")
