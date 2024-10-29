@@ -2,139 +2,95 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# Title for the app
+# Title and session state initialization
 st.title("Outage Data Analysis")
-
-# Initialize session state for the update button
 if 'update_triggered' not in st.session_state:
     st.session_state['update_triggered'] = False
 
-# Sidebar for Client Site Count option and Update button
+# Sidebar controls
 show_client_site_count = st.sidebar.checkbox("Show Client Site Count from RMS Station Status Report")
-
-# Button for updating site count
 if st.sidebar.button("Update"):
     st.session_state['update_triggered'] = True
 
-# Load the default RMS Station Status Report
+# Load RMS Station Status Report and extract regions and zones
 try:
-    default_file_path = "RMS Station Status Report.xlsx"
-    df_default = pd.read_excel(default_file_path, header=2)
-    df_default.columns = df_default.columns.str.strip()
+    df_default = pd.read_excel("RMS Station Status Report.xlsx", header=2).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     if 'Site Alias' in df_default.columns:
         df_default['Clients'] = df_default['Site Alias'].str.findall(r'\((.*?)\)')
         df_default_exploded = df_default.explode('Clients')
         regions_zones = df_default_exploded[['Cluster', 'Zone']].drop_duplicates().reset_index(drop=True)
     else:
-        st.error("The required 'Site Alias' column is not found in the default file.")
-        regions_zones = pd.DataFrame()
+        st.error("The required 'Site Alias' column is missing.")
 except FileNotFoundError:
     st.error("Default file not found.")
     regions_zones = pd.DataFrame()
 
-# Upload Power Availability Data
-uploaded_power_file = st.sidebar.file_uploader("Please upload Power Availability Data (Excel file)", type="xlsx")
-
-# Initialize DataFrames for average availability
-availability_df = pd.DataFrame()
-average_availability = pd.DataFrame()
-
-# Process the uploaded Power Availability data
+# Upload and process Power Availability Data
+uploaded_power_file = st.sidebar.file_uploader("Upload Power Availability Data (Excel file)", type="xlsx")
 if uploaded_power_file:
     xl_power = pd.ExcelFile(uploaded_power_file)
     if 'Site Wise Summary' in xl_power.sheet_names:
-        availability_df = xl_power.parse('Site Wise Summary', header=2)
-        availability_df.columns = availability_df.columns.str.strip()  # Clean column names
-
-        # Check if required columns exist
-        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)']
-        if all(col in availability_df.columns for col in required_columns):
-            # Calculate exact average AC and DC availability by Zone, ignoring KPI designation
+        availability_df = xl_power.parse('Site Wise Summary', header=2).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+        if set(['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']).issubset(availability_df.columns):
             average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
                 Avg_DC_Availability=('DC Availability (%)', 'mean')
-            ).reset_index()
-            average_availability['Avg_AC_Availability'] = average_availability['Avg_AC_Availability'].round(2)
-            average_availability['Avg_DC_Availability'] = average_availability['Avg_DC_Availability'].round(2)
+            ).reset_index().round(2)
         else:
-            st.error("The required columns are not found in the uploaded Power Availability file.")
+            st.error("Required columns are missing in Power Availability file.")
     else:
-        st.error("The 'Site Wise Summary' sheet is not found in the uploaded Power Availability file.")
+        st.error("'Site Wise Summary' sheet not found in Power Availability file.")
 
-# Upload Outage Data
-uploaded_outage_file = st.file_uploader("Please upload an Outage Excel Data file", type="xlsx")
-
+# Upload Outage Data and calculate client-specific reports
+uploaded_outage_file = st.file_uploader("Upload Outage Data file", type="xlsx")
 if uploaded_outage_file and not regions_zones.empty:
     xl = pd.ExcelFile(uploaded_outage_file)
     if 'RMS Alarm Elapsed Report' in xl.sheet_names:
-        df = xl.parse('RMS Alarm Elapsed Report', header=2)
-        df.columns = df.columns.str.strip()
+        df = xl.parse('RMS Alarm Elapsed Report', header=2).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+        df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
+        df['Duration (hours)'] = (pd.to_datetime(df['End Time']) - pd.to_datetime(df['Start Time'])).dt.total_seconds() / 3600
 
-        if 'Site Alias' in df.columns:
-            df['Client'] = df['Site Alias'].str.extract(r'\((.*?)\)')
-            df['Site Name'] = df['Site Alias'].str.extract(r'^(.*?)\s*\(')
-            df['Start Time'] = pd.to_datetime(df['Start Time'])
-            df['End Time'] = pd.to_datetime(df['End Time'])
-            df['Duration (hours)'] = (df['End Time'] - df['Start Time']).dt.total_seconds() / 3600
-            df['Duration (hours)'] = df['Duration (hours)'].apply(lambda x: round(x, 2))
+        # Generate reports for each client
+        reports = {}
+        for client in df['Client'].unique():
+            client_df = df[df['Client'] == client]
+            client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
+                Site_Count=('Site Alias', 'nunique'),
+                Duration=('Duration (hours)', 'sum'),
+                Event_Count=('Site Alias', 'count')
+            ).reset_index().rename(columns={'Cluster': 'Region', 'Duration': 'Duration (hours)'})
+            reports[client] = client_agg
 
-            # Generate client reports
-            reports = {}
-            for client in df['Client'].unique():
-                client_df = df[df['Client'] == client]
-                relevant_zones = df_default[df_default['Site Alias'].str.contains(client)]
-                relevant_regions_zones = relevant_zones[['Cluster', 'Zone']].drop_duplicates()
-                full_report = relevant_regions_zones.copy()
-                client_agg = client_df.groupby(['Cluster', 'Zone']).agg(
-                    Site_Count=('Site Alias', 'nunique'),
-                    Duration=('Duration (hours)', 'sum'),
-                    Event_Count=('Site Alias', 'count')
-                ).reset_index()
-                report = pd.merge(full_report, client_agg, how='left', left_on=['Cluster', 'Zone'], right_on=['Cluster', 'Zone'])
-                report = report.fillna(0)
-                report['Duration'] = report['Duration'].apply(lambda x: round(x, 2))
-                report = report.rename(columns={
-                    'Cluster': 'Region',
-                    'Site_Count': 'Site Count',
-                    'Event_Count': 'Event Count',
-                    'Duration': 'Duration (hours)'
-                })
-                reports[client] = report
+# Upload and process Previous Outage Data
+uploaded_previous_file = st.file_uploader("Upload Previous Outage Data file", type="xlsx")
+if uploaded_previous_file:
+    xl_previous = pd.ExcelFile(uploaded_previous_file)
+    if 'Report Summary' in xl_previous.sheet_names:
+        df_previous = xl_previous.parse('Report Summary', header=2).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+        df_previous['Elapsed Time (hours)'] = pd.to_timedelta(df_previous['Elapsed Time']).dt.total_seconds() / 3600
 
-# Sidebar option to show client-wise site table
-if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
+        selected_client = st.selectbox("Select Client", df_previous['Tenant'].unique())
+        if selected_client in reports:
+            report = reports[selected_client]
+            pivot_elapsed_time = df_previous[df_previous['Tenant'] == selected_client].pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
+            report = report.merge(pivot_elapsed_time, on='Zone', how='left').rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
+            if not average_availability.empty:
+                report = report.merge(average_availability, on='Zone', how='left')
+            st.write(f"Merged Report for {selected_client}:")
+            st.table(report)
+
+# Display Client Site Count from RMS Station Status Report
+if show_client_site_count or st.session_state['update_triggered']:
     st.subheader("Client Site Count from RMS Station Status Report")
+    unique_clients = ["All"] + df_default_exploded['Clients'].dropna().unique().tolist()
+    selected_client = st.selectbox("Select a Client", unique_clients)
 
-    # Add a filter for client names
-    client_filter_option = st.sidebar.selectbox(
-        "Select a Client to view Site Count",
-        options=["All"] + list(df_default_exploded['Clients'].unique())
-    )
-
-    # Checkbox for including both KPI and non-KPI sites
-    show_non_kpi = st.sidebar.checkbox("Show Non-KPI Sites (Sites starting with 'L')", value=False)
-
-    if not regions_zones.empty:
-        client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-
-        # Filter client site count based on selection
-        if client_filter_option != "All":
-            client_site_count = client_site_count[client_site_count['Clients'] == client_filter_option]
-
-        # Exclude non-KPI sites by default
-        if not show_non_kpi:
-            client_site_count = client_site_count[~client_site_count['Cluster'].str.startswith('L')]
-
-        unique_clients = client_site_count['Clients'].unique()
-
-        # Display the site count table
-        for client in unique_clients:
-            client_table = client_site_count[client_site_count['Clients'] == client]
-            total_row = pd.DataFrame(client_table.sum(numeric_only=True)).T
-            total_row['Cluster'] = 'Total'
-            client_table = pd.concat([client_table, total_row], ignore_index=True).drop_duplicates(keep='last')
-
+    if selected_client == "All":
+        for client in unique_clients[1:]:
+            client_table = df_default_exploded[df_default_exploded['Clients'] == client].groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
             st.write(f"Client Site Count for {client}")
             st.table(client_table)
     else:
-        st.error("No site data available.")
+        client_table = df_default_exploded[df_default_exploded['Clients'] == selected_client].groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
+        st.write(f"Client Site Count for {selected_client}")
+        st.table(client_table)
