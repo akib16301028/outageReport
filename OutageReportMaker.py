@@ -47,9 +47,9 @@ if uploaded_power_file:
         availability_df.columns = availability_df.columns.str.strip()  # Clean column names
 
         # Check if required columns exist
-        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']
+        required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)']
         if all(col in availability_df.columns for col in required_columns):
-            # Include all sites for power availability calculation, ignoring KPI and non-KPI status
+            # Calculate exact average AC and DC availability by Zone, ignoring KPI designation
             average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
                 Avg_DC_Availability=('DC Availability (%)', 'mean')
@@ -99,111 +99,42 @@ if uploaded_outage_file and not regions_zones.empty:
                     'Event_Count': 'Event Count',
                     'Duration': 'Duration (hours)'
                 })
-                # Add total row
-                total_row = pd.DataFrame(report.sum(numeric_only=True)).T
-                total_row['Region'] = 'Total'
-                report = pd.concat([report, total_row], ignore_index=True)
                 reports[client] = report
-
-# Upload Previous Outage Data and Map Redeem Hours
-st.subheader("Upload Previous Outage Data")
-
-uploaded_previous_file = st.file_uploader("Please upload a Previous Outage Excel Data file", type="xlsx")
-
-if uploaded_previous_file:
-    xl_previous = pd.ExcelFile(uploaded_previous_file)
-    
-    if 'Report Summary' in xl_previous.sheet_names:
-        df_previous = xl_previous.parse('Report Summary', header=2)
-        df_previous.columns = df_previous.columns.str.strip()
-
-        if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
-            
-            # Convert elapsed time to hours
-            def convert_to_hours(elapsed_time):
-                try:
-                    total_seconds = pd.to_timedelta(elapsed_time).total_seconds()
-                    hours = total_seconds / 3600
-                    return round(hours, 2)
-                except:
-                    return 0
-
-            df_previous['Elapsed Time (hours)'] = df_previous['Elapsed Time'].apply(convert_to_hours)
-            tenant_map = {'Grameenphone': 'GP', 'Banglalink': 'BL', 'Robi': 'ROBI', 'Banjo': 'BANJO'}
-            df_previous['Tenant'] = df_previous['Tenant'].replace(tenant_map)
-
-            clients = df_previous['Tenant'].unique()
-            selected_client = st.selectbox("Select a Client (Tenant)", clients)
-
-            df_filtered = df_previous[df_previous['Tenant'] == selected_client]
-
-            if not df_filtered.empty:
-                # Pivot table to get total redeemed hours per zone
-                pivot_elapsed_time = df_filtered.pivot_table(index='Zone', values='Elapsed Time (hours)', aggfunc='sum').reset_index()
-                pivot_elapsed_time['Elapsed Time (hours)'] = pivot_elapsed_time['Elapsed Time (hours)'].apply(lambda x: f"{x:.2f}")
-
-                # Merge the reports with the previous redeemed hours
-                if selected_client in reports:
-                    report = reports[selected_client]
-                    report = pd.merge(report, pivot_elapsed_time, how='left', on='Zone')
-                    report = report.rename(columns={'Elapsed Time (hours)': 'Total Redeem Hours'})
-                    report['Total Redeem Hours'] = report['Total Redeem Hours'].fillna(0)
-
-                    # Merge with Client Site Count
-                    client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
-                    client_table = client_site_count[client_site_count['Clients'] == selected_client]
-                    merged_report = pd.merge(report, client_table, how='left', left_on=['Region', 'Zone'], right_on=['Cluster', 'Zone'])
-                    merged_report = merged_report.drop(columns=['Cluster', 'Clients'])
-                    merged_report = merged_report.fillna(0)
-                    merged_report['Total Site Count'] = merged_report['Site Count_y'].fillna(0).astype(int)
-
-                    # Merge with Average Power Availability
-                    if not average_availability.empty:
-                        merged_report = pd.merge(merged_report, average_availability, how='left', on='Zone')
-
-                    # Add total row
-                    total_row = pd.DataFrame(merged_report.sum(numeric_only=True)).T
-                    total_row['Region'] = 'Total'
-                    merged_report = pd.concat([merged_report, total_row], ignore_index=True)
-
-                    # Display the final merged report
-                    st.write(f"Merged Report for {selected_client}:")
-                    st.table(merged_report)
-            else:
-                st.error(f"No data available for the client '{selected_client}'")
-        else:
-            st.error("The required columns 'Elapsed Time', 'Zone', and 'Tenant' are not found.")
-    else:
-        st.error("The 'Report Summary' sheet is not found.")
 
 # Sidebar option to show client-wise site table
 if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
     st.subheader("Client Site Count from RMS Station Status Report")
-    unique_clients = df_default_exploded['Clients'].dropna().unique().tolist()
-    unique_clients.insert(0, "All")  # Add 'All' option to show all tables
 
-    selected_client = st.selectbox("Select a Client", unique_clients)
+    # Add a filter for client names
+    client_filter_option = st.sidebar.selectbox(
+        "Select a Client to view Site Count",
+        options=["All"] + list(df_default_exploded['Clients'].unique())
+    )
 
-    if selected_client == "All":
-        for client in unique_clients[1:]:  # Skip "All"
-            client_table = df_default_exploded[df_default_exploded['Clients'] == client]
-            client_table = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
+    # Checkbox for including both KPI and non-KPI sites
+    show_non_kpi = st.sidebar.checkbox("Show Non-KPI Sites (Sites starting with 'L')", value=False)
 
-            # Add total row
+    if not regions_zones.empty:
+        client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+
+        # Filter client site count based on selection
+        if client_filter_option != "All":
+            client_site_count = client_site_count[client_site_count['Clients'] == client_filter_option]
+
+        # Exclude non-KPI sites by default
+        if not show_non_kpi:
+            client_site_count = client_site_count[~client_site_count['Cluster'].str.startswith('L')]
+
+        unique_clients = client_site_count['Clients'].unique()
+
+        # Display the site count table
+        for client in unique_clients:
+            client_table = client_site_count[client_site_count['Clients'] == client]
             total_row = pd.DataFrame(client_table.sum(numeric_only=True)).T
             total_row['Cluster'] = 'Total'
-            client_table = pd.concat([client_table, total_row], ignore_index=True)
+            client_table = pd.concat([client_table, total_row], ignore_index=True).drop_duplicates(keep='last')
 
             st.write(f"Client Site Count for {client}")
             st.table(client_table)
     else:
-        client_table = df_default_exploded[df_default_exploded['Clients'] == selected_client]
-        client_table = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
-
-        # Add total row
-        total_row = pd.DataFrame(client_table.sum(numeric_only=True)).T
-        total_row['Cluster'] = 'Total'
-        client_table = pd.concat([client_table, total_row], ignore_index=True)
-
-        st.write(f"Client Site Count for {selected_client}")
-        st.table(client_table)
+        st.error("No site data available.")
