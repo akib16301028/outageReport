@@ -49,7 +49,7 @@ if uploaded_power_file:
         # Check if required columns exist
         required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']
         if all(col in availability_df.columns for col in required_columns):
-            # Include all sites for power availability calculation, ignoring KPI and non-KPI status
+            # Calculate average availability across all sites, without KPI distinction
             average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
                 Avg_DC_Availability=('DC Availability (%)', 'mean')
@@ -99,10 +99,6 @@ if uploaded_outage_file and not regions_zones.empty:
                     'Event_Count': 'Event Count',
                     'Duration': 'Duration (hours)'
                 })
-                # Add total row
-                total_row = pd.DataFrame(report.sum(numeric_only=True)).T
-                total_row['Region'] = 'Total'
-                report = pd.concat([report, total_row], ignore_index=True)
                 reports[client] = report
 
 # Upload Previous Outage Data and Map Redeem Hours
@@ -118,7 +114,6 @@ if uploaded_previous_file:
         df_previous.columns = df_previous.columns.str.strip()
 
         if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
-            
             # Convert elapsed time to hours
             def convert_to_hours(elapsed_time):
                 try:
@@ -161,7 +156,7 @@ if uploaded_previous_file:
                     if not average_availability.empty:
                         merged_report = pd.merge(merged_report, average_availability, how='left', on='Zone')
 
-                    # Add total row
+                    # Add total row only once at the end of the merged report
                     total_row = pd.DataFrame(merged_report.sum(numeric_only=True)).T
                     total_row['Region'] = 'Total'
                     merged_report = pd.concat([merged_report, total_row], ignore_index=True)
@@ -185,25 +180,13 @@ if show_client_site_count or st.session_state['update_triggered']:  # Trigger cl
     selected_client = st.selectbox("Select a Client", unique_clients)
 
     if selected_client == "All":
-        for client in unique_clients[1:]:  # Skip "All"
-            client_table = df_default_exploded[df_default_exploded['Clients'] == client]
-            client_table = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
-
-            # Add total row
-            total_row = pd.DataFrame(client_table.sum(numeric_only=True)).T
-            total_row['Cluster'] = 'Total'
-            client_table = pd.concat([client_table, total_row], ignore_index=True)
-
-            st.write(f"Client Site Count for {client}")
-            st.table(client_table)
+        st.write("Showing all clients together:")
+        grouped_client_site_count = df_default_exploded.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
+        st.table(grouped_client_site_count)
     else:
         client_table = df_default_exploded[df_default_exploded['Clients'] == selected_client]
-        client_table = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
+        client_site_count = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
+        st.write(f"Site Count for Client: {selected_client}")
+        st.table(client_site_count)
 
-        # Add total row
-        total_row = pd.DataFrame(client_table.sum(numeric_only=True)).T
-        total_row['Cluster'] = 'Total'
-        client_table = pd.concat([client_table, total_row], ignore_index=True)
-
-        st.write(f"Client Site Count for {selected_client}")
-        st.table(client_table)
+    st.session_state['update_triggered'] = False
