@@ -49,10 +49,7 @@ if uploaded_power_file:
         # Check if required columns exist
         required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']
         if all(col in availability_df.columns for col in required_columns):
-            # Exclude non-KPI sites starting with 'L'
-            availability_df = availability_df[~availability_df['Site'].str.startswith('L')]
-
-            # Calculate average AC and DC availability by Zone
+            # Calculate average AC and DC availability by Zone without excluding non-KPI sites
             average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
                 Avg_DC_Availability=('DC Availability (%)', 'mean')
@@ -190,16 +187,11 @@ if show_client_site_count or st.session_state['update_triggered']:  # Trigger cl
         if client_filter_option != "All":
             client_site_count = client_site_count[client_site_count['Clients'] == client_filter_option]
 
-        # Exclude non-KPI sites by default
+        # Filter non-KPI sites based on checkbox
         if not show_non_kpi:
-            client_site_count = client_site_count[~client_site_count['Cluster'].str.startswith('L')]
+            client_site_count = client_site_count[~client_site_count['Site Alias'].str.startswith("L")]
 
-        unique_clients = client_site_count['Clients'].unique()
+        client_site_count = client_site_count.rename(columns={'Cluster': 'Region'})
+        st.table(client_site_count)
 
-        # Display the site count table
-        for client in unique_clients:
-            client_table = client_site_count[client_site_count['Clients'] == client]
-            st.write(f"### {client}")
-            st.table(client_table)
-    else:
-        st.error("No site data available.")
+    st.session_state['update_triggered'] = False
