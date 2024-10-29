@@ -49,10 +49,7 @@ if uploaded_power_file:
         # Check if required columns exist
         required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']
         if all(col in availability_df.columns for col in required_columns):
-            # Exclude non-KPI sites starting with 'L'
-            availability_df = availability_df[~availability_df['Site'].str.startswith('L')]
-
-            # Calculate average AC and DC availability by Zone
+            # Include all sites for power availability calculation, ignoring KPI and non-KPI status
             average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
                 Avg_DC_Availability=('DC Availability (%)', 'mean')
@@ -102,6 +99,10 @@ if uploaded_outage_file and not regions_zones.empty:
                     'Event_Count': 'Event Count',
                     'Duration': 'Duration (hours)'
                 })
+                # Add total row
+                total_row = pd.DataFrame(report.sum(numeric_only=True)).T
+                total_row['Region'] = 'Total'
+                report = pd.concat([report, total_row], ignore_index=True)
                 reports[client] = report
 
 # Upload Previous Outage Data and Map Redeem Hours
@@ -160,6 +161,11 @@ if uploaded_previous_file:
                     if not average_availability.empty:
                         merged_report = pd.merge(merged_report, average_availability, how='left', on='Zone')
 
+                    # Add total row
+                    total_row = pd.DataFrame(merged_report.sum(numeric_only=True)).T
+                    total_row['Region'] = 'Total'
+                    merged_report = pd.concat([merged_report, total_row], ignore_index=True)
+
                     # Display the final merged report
                     st.write(f"Merged Report for {selected_client}:")
                     st.table(merged_report)
@@ -173,33 +179,31 @@ if uploaded_previous_file:
 # Sidebar option to show client-wise site table
 if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
     st.subheader("Client Site Count from RMS Station Status Report")
+    unique_clients = df_default_exploded['Clients'].dropna().unique().tolist()
+    unique_clients.insert(0, "All")  # Add 'All' option to show all tables
 
-    # Add a filter for client names
-    client_filter_option = st.sidebar.selectbox(
-        "Select a Client to view Site Count",
-        options=["All"] + list(df_default_exploded['Clients'].unique())
-    )
+    selected_client = st.selectbox("Select a Client", unique_clients)
 
-    # Checkbox for including both KPI and non-KPI sites
-    show_non_kpi = st.sidebar.checkbox("Show Non-KPI Sites (Sites starting with 'L')", value=False)
+    if selected_client == "All":
+        for client in unique_clients[1:]:  # Skip "All"
+            client_table = df_default_exploded[df_default_exploded['Clients'] == client]
+            client_table = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
 
-    if not regions_zones.empty:
-        client_site_count = df_default_exploded.groupby(['Clients', 'Cluster', 'Zone']).size().reset_index(name='Site Count')
+            # Add total row
+            total_row = pd.DataFrame(client_table.sum(numeric_only=True)).T
+            total_row['Cluster'] = 'Total'
+            client_table = pd.concat([client_table, total_row], ignore_index=True)
 
-        # Filter client site count based on selection
-        if client_filter_option != "All":
-            client_site_count = client_site_count[client_site_count['Clients'] == client_filter_option]
-
-        # Exclude non-KPI sites by default
-        if not show_non_kpi:
-            client_site_count = client_site_count[~client_site_count['Cluster'].str.startswith('L')]
-
-        unique_clients = client_site_count['Clients'].unique()
-
-        # Display the site count table
-        for client in unique_clients:
-            client_table = client_site_count[client_site_count['Clients'] == client]
-            st.write(f"### {client}")
+            st.write(f"Client Site Count for {client}")
             st.table(client_table)
     else:
-        st.error("No site data available.")
+        client_table = df_default_exploded[df_default_exploded['Clients'] == selected_client]
+        client_table = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
+
+        # Add total row
+        total_row = pd.DataFrame(client_table.sum(numeric_only=True)).T
+        total_row['Cluster'] = 'Total'
+        client_table = pd.concat([client_table, total_row], ignore_index=True)
+
+        st.write(f"Client Site Count for {selected_client}")
+        st.table(client_table)
