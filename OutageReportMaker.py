@@ -49,7 +49,7 @@ if uploaded_power_file:
         # Check if required columns exist
         required_columns = ['Zone', 'AC Availability (%)', 'DC Availability (%)', 'Site']
         if all(col in availability_df.columns for col in required_columns):
-            # Calculate average availability across all sites, without KPI distinction
+            # Calculate average AC and DC availability for all clients
             average_availability = availability_df.groupby('Zone').agg(
                 Avg_AC_Availability=('AC Availability (%)', 'mean'),
                 Avg_DC_Availability=('DC Availability (%)', 'mean')
@@ -99,6 +99,11 @@ if uploaded_outage_file and not regions_zones.empty:
                     'Event_Count': 'Event Count',
                     'Duration': 'Duration (hours)'
                 })
+                # Add total row only once
+                if 'Total' not in report['Region'].values:
+                    total_row = pd.DataFrame(report.sum(numeric_only=True)).T
+                    total_row['Region'] = 'Total'
+                    report = pd.concat([report, total_row], ignore_index=True)
                 reports[client] = report
 
 # Upload Previous Outage Data and Map Redeem Hours
@@ -114,6 +119,7 @@ if uploaded_previous_file:
         df_previous.columns = df_previous.columns.str.strip()
 
         if 'Elapsed Time' in df_previous.columns and 'Zone' in df_previous.columns and 'Tenant' in df_previous.columns:
+            
             # Convert elapsed time to hours
             def convert_to_hours(elapsed_time):
                 try:
@@ -152,14 +158,15 @@ if uploaded_previous_file:
                     merged_report = merged_report.fillna(0)
                     merged_report['Total Site Count'] = merged_report['Site Count_y'].fillna(0).astype(int)
 
-                    # Merge with Average Power Availability
+                    # Merge with Average Power Availability (using whole averages)
                     if not average_availability.empty:
                         merged_report = pd.merge(merged_report, average_availability, how='left', on='Zone')
 
-                    # Add total row only once at the end of the merged report
-                    total_row = pd.DataFrame(merged_report.sum(numeric_only=True)).T
-                    total_row['Region'] = 'Total'
-                    merged_report = pd.concat([merged_report, total_row], ignore_index=True)
+                    # Add total row only once
+                    if 'Total' not in merged_report['Region'].values:
+                        total_row = pd.DataFrame(merged_report.sum(numeric_only=True)).T
+                        total_row['Region'] = 'Total'
+                        merged_report = pd.concat([merged_report, total_row], ignore_index=True)
 
                     # Display the final merged report
                     st.write(f"Merged Report for {selected_client}:")
@@ -172,21 +179,10 @@ if uploaded_previous_file:
         st.error("The 'Report Summary' sheet is not found.")
 
 # Sidebar option to show client-wise site table
-if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button click
-    st.subheader("Client Site Count from RMS Station Status Report")
-    unique_clients = df_default_exploded['Clients'].dropna().unique().tolist()
-    unique_clients.insert(0, "All")  # Add 'All' option to show all tables
-
-    selected_client = st.selectbox("Select a Client", unique_clients)
-
-    if selected_client == "All":
-        st.write("Showing all clients together:")
-        grouped_client_site_count = df_default_exploded.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
-        st.table(grouped_client_site_count)
+if show_client_site_count or st.session_state['update_triggered']:  # Trigger client-site count update with button
+    st.subheader("Client Wise Site Count")
+    if not regions_zones.empty:
+        st.table(regions_zones)
     else:
-        client_table = df_default_exploded[df_default_exploded['Clients'] == selected_client]
-        client_site_count = client_table.groupby(['Cluster', 'Zone']).size().reset_index(name='Site Count')
-        st.write(f"Site Count for Client: {selected_client}")
-        st.table(client_site_count)
+        st.warning("No regions and zones data available.")
 
-    st.session_state['update_triggered'] = False
